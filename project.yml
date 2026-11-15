@@ -1,0 +1,92 @@
+name: ARDublinBus
+options:
+  deploymentTarget:
+    iOS: "18.0"
+    watchOS: "10.0"
+  createIntermediateGroups: true
+packages:
+  ZIPFoundation:
+    url: https://github.com/weichsel/ZIPFoundation
+    from: 0.9.19
+# Per-developer values (bundle ID, team, API key) come from Config/Secrets.xcconfig,
+# included by Config/App.xcconfig. See Config/Secrets.example.xcconfig.
+configFiles:
+  Debug: Config/App.xcconfig
+  Release: Config/App.xcconfig
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    MARKETING_VERSION: "1.0"
+    CURRENT_PROJECT_VERSION: "2"
+targets:
+  ARDublinBus:
+    type: application
+    platform: iOS
+    sources:
+      - ARDublinBus
+      - Shared
+    dependencies:
+      - package: ZIPFoundation
+      - target: ARDublinBusWatch
+    info:
+      path: ARDublinBus/Info.plist
+      properties:
+        CFBundleDisplayName: Bus AR
+        NSCameraUsageDescription: The camera is used to find Dublin bus stop signs and read their stop numbers.
+        NSLocationWhenInUseUsageDescription: Your location is used to find the bus stops nearest to you.
+        UIRequiredDeviceCapabilities: [arkit]
+        UILaunchScreen: {}
+        UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
+        UIApplicationSupportsIndirectInputEvents: true
+        NTAAPIKey: $(NTA_API_KEY)
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: $(APP_BUNDLE_IDENTIFIER)
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        TARGETED_DEVICE_FAMILY: "1"
+        CODE_SIGN_STYLE: Automatic
+        GENERATE_INFOPLIST_FILE: NO
+  ARDublinBusWatch:
+    type: application
+    platform: watchOS
+    sources:
+      - ARDublinBusWatch
+      - Shared
+    info:
+      path: ARDublinBusWatch/Info.plist
+      properties:
+        CFBundleDisplayName: Dublin Bus
+        WKApplication: true
+        WKCompanionAppBundleIdentifier: $(APP_BUNDLE_IDENTIFIER)
+        NSLocationWhenInUseUsageDescription: Your location is used to find the bus stops nearest to you.
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: $(APP_BUNDLE_IDENTIFIER).watchkitapp
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        CODE_SIGN_STYLE: Automatic
+        GENERATE_INFOPLIST_FILE: NO
+        SKIP_INSTALL: YES
+  ARDublinBusTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - ARDublinBusTests
+    dependencies:
+      - target: ARDublinBus
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        PRODUCT_BUNDLE_IDENTIFIER: $(APP_BUNDLE_IDENTIFIER).Tests
+schemes:
+  ARDublinBusWatch:
+    build:
+      targets:
+        ARDublinBusWatch: all
+  ARDublinBus:
+    build:
+      targets:
+        ARDublinBus: all
+        ARDublinBusTests: [test]
+    test:
+      targets:
+        - ARDublinBusTests

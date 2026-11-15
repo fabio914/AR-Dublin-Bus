@@ -1,0 +1,16 @@
+// Shared build settings, applied to every target.
+//
+// Per-developer values live in Config/Secrets.xcconfig, which is git-ignored.
+// Copy Config/Secrets.example.xcconfig to Config/Secrets.xcconfig and fill it in.
+
+// Bundle identifier of the app (the test bundle appends ".Tests").
+APP_BUNDLE_IDENTIFIER = com.example.ARDublinBus
+
+// Your Apple developer team ID, used for code signing.
+DEVELOPMENT_TEAM =
+
+// NTA GTFS-Realtime key from https://developer.nationaltransport.ie.
+// It can also be entered in the app's Settings screen.
+NTA_API_KEY =
+
+#include? "Secrets.xcconfig"

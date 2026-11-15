@@ -1,0 +1,149 @@
+import CoreLocation
+import Foundation
+
+/// Everything the departures panel shows for one stop.
+struct StopBoard: Equatable, Sendable {
+    let stopCode: String
+    let stopName: String
+    let departures: [Departure]
+    /// When live data is unavailable, why (departures then come from the timetable only).
+    let realtimeIssue: String?
+    let realtimeTimestamp: Date?
+    let generatedAt: Date
+
+    var hasLiveData: Bool { realtimeIssue == nil && realtimeTimestamp != nil }
+}
+
+enum DepartureServiceError: LocalizedError, Equatable {
+    case unknownStop(String)
+
+    var errorDescription: String? {
+        switch self {
+        case .unknownStop(let code): "Stop \(code) isn't in the Dublin Bus timetable."
+        }
+    }
+}
+
+/// Builds `StopBoard`s from the static timetable and the realtime feed.
+actor DepartureService {
+    let timetableStore: TimetableStore
+    let realtimeClient: RealtimeClient
+    private let calculator: DepartureCalculator
+    private var callsCache: [String: [StopCall]] = [:]
+    private var cacheVersion: String?
+
+    init(timetableStore: TimetableStore, realtimeClient: RealtimeClient, calculator: DepartureCalculator = .init()) {
+        self.timetableStore = timetableStore
+        self.realtimeClient = realtimeClient
+        self.calculator = calculator
+    }
+
+    /// All stop codes in the timetable (used to validate OCR results).
+    func knownStopCodes() async throws -> Set<String> {
+        Set(try await timetableStore.loadedTimetable().stopsByCode.keys)
+    }
+
+    func board(forStopCode code: String, now: Date = .now) async throws -> StopBoard {
+        try await boards(forStopCodes: [code], now: now)[0]
+    }
+
+    /// Boards for several stops, sharing one timetable scan and one realtime snapshot.
+    /// Results are in the order of `codes`.
+    func boards(forStopCodes codes: [String], now: Date = .now) async throws -> [StopBoard] {
+        let timetable = try await timetableStore.loadedTimetable()
+        var stopsByCode: [String: [GTFSStop]] = [:]
+        for code in codes {
+            guard let stops = timetable.stopsByCode[code], !stops.isEmpty else {
+                throw DepartureServiceError.unknownStop(code)
+            }
+            stopsByCode[code] = stops
+        }
+        let callsByCode = try await calls(for: stopsByCode, timetable: timetable)
+
+        var realtime: RealtimeSnapshot?
+        var realtimeIssue: String?
+        do {
+            realtime = try await realtimeClient.snapshot(now: now)
+        } catch {
+            realtimeIssue = (error as? LocalizedError)?.errorDescription ?? "Live times are unavailable."
+        }
+
+        return codes.map { code in
+            let stops = stopsByCode[code]!
+            let departures = calculator.departures(
+                calls: callsByCode[code] ?? [],
+                stopIDs: Set(stops.map(\.id)),
+                timetable: timetable,
+                realtime: realtime,
+                now: now
+            )
+            return StopBoard(
+                stopCode: code,
+                stopName: stops[0].name,
+                departures: departures,
+                realtimeIssue: realtimeIssue,
+                realtimeTimestamp: realtime?.feedTimestamp ?? realtime?.fetchedAt,
+                generatedAt: now
+            )
+        }
+    }
+
+    /// Stops around a location, nearest first.
+    static let nearbyRadius: CLLocationDistance = 600
+
+    func nearbyStops(around coordinate: CLLocationCoordinate2D, radius: CLLocationDistance = nearbyRadius, limit: Int = 12) async throws -> [NearbyStop] {
+        try await timetableStore.loadedTimetable().stops(near: coordinate, within: radius, limit: limit)
+    }
+
+    /// Calls per stop code, scanning `stop_times.txt` once for all codes not yet cached.
+    private func calls(for stopsByCode: [String: [GTFSStop]], timetable: StaticTimetable) async throws -> [String: [StopCall]] {
+        if cacheVersion != timetable.version {
+            callsCache.removeAll()
+            cacheVersion = timetable.version
+        }
+
+        let missing = stopsByCode.filter { callsCache[$0.key] == nil }
+        if !missing.isEmpty {
+            var codeByStopID: [String: String] = [:]
+            for (code, stops) in missing {
+                for stop in stops { codeByStopID[stop.id] = code }
+            }
+            let stopIDs = Set(codeByStopID.keys)
+            let calls = try await Task.detached(priority: .userInitiated) {
+                try timetable.calls(atStopIDs: stopIDs)
+            }.value
+
+            var grouped = Dictionary(uniqueKeysWithValues: missing.keys.map { ($0, [StopCall]()) })
+            for call in calls {
+                if let code = codeByStopID[call.stopID] { grouped[code, default: []].append(call) }
+            }
+            callsCache.merge(grouped) { _, new in new }
+        }
+        return stopsByCode.keys.reduce(into: [:]) { result, code in result[code] = callsCache[code] }
+    }
+}
+
+/// One upcoming bus at a nearby stop.
+struct NearbyDeparture: Identifiable, Hashable, Sendable {
+    let departure: Departure
+    let stop: NearbyStop
+
+    var id: String { departure.id }
+}
+
+enum NearbyDepartures {
+    /// Merges boards of nearby stops into one chronological list. A bus calling at
+    /// several of the stops is listed once, at the closest of them.
+    static func merge(_ boards: [(stop: NearbyStop, board: StopBoard)], limit: Int = 25) -> [NearbyDeparture] {
+        var best: [String: NearbyDeparture] = [:]
+        for (stop, board) in boards {
+            for departure in board.departures {
+                if let existing = best[departure.id], existing.stop.distance <= stop.distance { continue }
+                best[departure.id] = NearbyDeparture(departure: departure, stop: stop)
+            }
+        }
+        return Array(best.values
+            .sorted { ($0.departure.expected, $0.stop.distance) < ($1.departure.expected, $1.stop.distance) }
+            .prefix(limit))
+    }
+}
