@@ -45,8 +45,8 @@ struct StaticTimetableTests {
         let fixture = try GTFSFixture()
         let statistics = try TimetableDatabaseBuilder.build(fromGTFS: fixture.directory, to: fixture.databaseURL)
         // The row at the unknown stop "X8220DB000271" is skipped.
-        #expect(statistics.calls == 11)
-        // T1 (two stops), T10 (the decoy stop), and every trip calling only at stop 271.
+        #expect(statistics.calls == 12)
+        // T1 (three stops), T10 (the decoy stop), and every trip calling only at stop 271.
         #expect(statistics.patterns == 3)
         // S1 and S2 have the same geometry.
         #expect(statistics.shapes == 1)
@@ -84,9 +84,9 @@ struct StaticTimetableTests {
 
         #expect(details.route.shortName == "27")
         #expect(details.headsign == "Clare Hall")
-        #expect(details.calls.map(\.stop.code) == ["115", "271"])
-        #expect(details.calls.map(\.call.arrival) == [7 * 3600 + 50 * 60, 8 * 3600 + 10 * 60])
-        #expect(details.calls.map(\.call.stopSequence) == [1, 10])
+        #expect(details.calls.map(\.stop.code) == ["115", "271", "2711"])
+        #expect(details.calls.map(\.call.arrival) == [7 * 3600 + 50 * 60, 8 * 3600 + 10 * 60, 8 * 3600 + 25 * 60])
+        #expect(details.calls.map(\.call.stopSequence) == [1, 10, 20])
 
         #expect(details.shape.count == 3)
         #expect(abs(details.shape[0].latitude - 53.38796) < 1e-5)

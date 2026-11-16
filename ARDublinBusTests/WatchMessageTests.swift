@@ -19,6 +19,19 @@ struct WatchMessageTests {
         #expect(try WatchMessageCoding.decode(WatchNearbyResponse.self, from: WatchMessageCoding.encode(response)) == response)
     }
 
+    @Test func departedBusesDropOffTheList() {
+        let now = Date.dublin(2026, 11, 16, 8, 0)
+        func departure(_ id: String, in seconds: TimeInterval) -> WatchNearbyResponse.Departure {
+            .init(id: id, route: "27", destination: "Clare Hall", expected: now.addingTimeInterval(seconds),
+                  isRealtime: true, isCancelled: false)
+        }
+        let stop = WatchNearbyResponse.Stop(code: "271", name: "O'Connell St Lwr", distance: 40, departures: [
+            departure("gone", in: -300), departure("due", in: -30), departure("soon", in: 240),
+        ])
+        #expect(stop.upcomingDepartures(at: now).map(\.id) == ["due", "soon"])
+        #expect(stop.upcomingDepartures(at: now.addingTimeInterval(600)).isEmpty)
+    }
+
     @Test func etaText() {
         let now = Date.dublin(2026, 11, 16, 8, 0)
         func eta(_ minutes: Double) -> String {
@@ -28,7 +41,7 @@ struct WatchMessageTests {
         #expect(eta(0.4) == "Due")
         #expect(eta(-2) == "Due")
         #expect(eta(12.7) == "12 min")
-        #expect(eta(90) == Date.dublin(2026, 11, 16, 9, 30).formatted(WatchNearbyResponse.Departure.clockFormat))
+        #expect(eta(90) == Date.dublin(2026, 11, 16, 9, 30).formatted(ETAText.clockFormat))
     }
 
     @Test func packsBoardsForTheWatch() {

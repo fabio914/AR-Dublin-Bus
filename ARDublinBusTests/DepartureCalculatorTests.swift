@@ -22,6 +22,71 @@ struct DepartureCalculatorTests {
         calculator.departures(calls: calls, stopIDs: stopIDs, timetable: timetable, realtime: realtime, now: now)
     }
 
+    @Test func tripsEndingAtTheStopAreNotDepartures() throws {
+        // E1 ends at stop 271; C1 calls there and carries on.
+        let fixture = try GTFSFixture(
+            trips: """
+            route_id,service_id,trip_id,trip_headsign,direction_id,shape_id
+            r27,WK,E1,O'Connell St,0
+            r27,WK,C1,Clare Hall,0
+            """,
+            stopTimes: """
+            trip_id,arrival_time,departure_time,stop_id,stop_sequence
+            E1,07:50:00,07:50:00,8220DB000115,1
+            E1,08:10:00,08:10:00,8220DB000271,2
+            C1,08:15:00,08:15:00,8220DB000271,1
+            C1,08:40:00,08:40:00,8220DB000115,2
+            """
+        )
+        let timetable = try fixture.load()
+        let calls = try timetable.calls(atStopIDs: stopIDs)
+        #expect(Dictionary(uniqueKeysWithValues: calls.map { ($0.tripID, $0.isLastStop) }) == ["E1": true, "C1": false])
+
+        let result = calculator.departures(calls: calls, stopIDs: stopIDs, timetable: timetable, realtime: nil,
+                                           now: .dublin(2026, 11, 16, 8, 0))
+        #expect(result.map(\.id) == ["C1@20261116"])
+    }
+
+    @Test func loopRouteCallingTwiceGetsDistinctIDs() throws {
+        let fixture = try GTFSFixture(
+            trips: """
+            route_id,service_id,trip_id,trip_headsign,direction_id,shape_id
+            r27,WK,L1,City loop,0
+            """,
+            stopTimes: """
+            trip_id,arrival_time,departure_time,stop_id,stop_sequence
+            L1,08:05:00,08:05:00,8220DB000271,1
+            L1,08:20:00,08:20:00,8220DB000115,2
+            L1,08:40:00,08:40:00,8220DB000271,3
+            L1,08:55:00,08:55:00,8220DB000115,4
+            """
+        )
+        let timetable = try fixture.load()
+        let result = calculator.departures(calls: try timetable.calls(atStopIDs: stopIDs), stopIDs: stopIDs,
+                                           timetable: timetable, realtime: nil, now: .dublin(2026, 11, 16, 8, 0))
+        #expect(result.map(\.id) == ["L1@20261116", "L1@20261116#3"])
+        #expect(result.map(\.trip?.stopSequence) == [1, 3])
+    }
+
+    @Test func windowedCallsGiveTheSameBoard() throws {
+        // Morning, a quiet afternoon, and just after midnight (N1 runs at 24:35 on Monday's service day).
+        let times: [Date] = [.dublin(2026, 11, 16, 6, 0), .dublin(2026, 11, 16, 8, 0), .dublin(2026, 11, 16, 9, 30),
+                             .dublin(2026, 11, 16, 15, 0), .dublin(2026, 11, 16, 23, 30), .dublin(2026, 11, 17, 0, 20)]
+        for now in times {
+            let windowed = try timetable.calls(atStopIDs: stopIDs, arrivalWindows: calculator.arrivalWindows(at: now))
+            let expected = departures(at: now)
+            let actual = calculator.departures(calls: windowed, stopIDs: stopIDs, timetable: timetable, realtime: nil, now: now)
+            #expect(actual == expected)
+            #expect(windowed.count <= calls.count)
+        }
+        // At 15:00 nothing at this stop is anywhere near due.
+        let afternoon = calculator.arrivalWindows(at: .dublin(2026, 11, 16, 15, 0))
+        #expect(try timetable.calls(atStopIDs: stopIDs, arrivalWindows: afternoon).isEmpty)
+        // Overlapping windows don't return a call twice.
+        let all = try timetable.calls(atStopIDs: stopIDs, arrivalWindows: [0...100_000, 50_000...200_000])
+        #expect(all.count == calls.count)
+    }
+
     @Test func scheduledOnlyWithoutRealtime() {
         // Monday 08:00.
         let result = departures(at: .dublin(2026, 11, 16, 8, 0))

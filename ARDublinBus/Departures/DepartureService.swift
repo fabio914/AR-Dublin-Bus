@@ -9,10 +9,12 @@ struct StopBoard: Equatable, Sendable {
     let departures: [Departure]
     /// When live data is unavailable, why (departures then come from the timetable only).
     let realtimeIssue: String?
+    /// When the live feed was published (or fetched, if it doesn't say).
     let realtimeTimestamp: Date?
     let generatedAt: Date
 
-    var hasLiveData: Bool { realtimeIssue == nil && realtimeTimestamp != nil }
+    /// The time to show as "updated": the live feed's when there is one.
+    var updatedAt: Date { realtimeTimestamp ?? generatedAt }
 }
 
 enum DepartureServiceError: LocalizedError, Equatable {
@@ -59,7 +61,7 @@ actor DepartureService {
             }
             stopsByCode[code] = stops
         }
-        let callsByCode = try await calls(for: stopsByCode, timetable: timetable)
+        let callsByCode = try await calls(for: stopsByCode, timetable: timetable, now: now)
         let (realtime, realtimeIssue) = await realtimeSnapshot(now: now)
 
         return codes.map { code in
@@ -149,15 +151,16 @@ actor DepartureService {
         }
     }
 
-    /// Calls per stop code, from the timetable database.
-    private func calls(for stopsByCode: [String: [GTFSStop]], timetable: StaticTimetable) async throws -> [String: [StopCall]] {
+    /// Calls per stop code that can matter at `now`, from the timetable database.
+    private func calls(for stopsByCode: [String: [GTFSStop]], timetable: StaticTimetable, now: Date) async throws -> [String: [StopCall]] {
         var codeByStopID: [String: String] = [:]
         for (code, stops) in stopsByCode {
             for stop in stops { codeByStopID[stop.id] = code }
         }
         let stopIDs = Set(codeByStopID.keys)
+        let windows = calculator.arrivalWindows(at: now)
         let calls = try await Task.detached(priority: .userInitiated) {
-            try timetable.calls(atStopIDs: stopIDs)
+            try timetable.calls(atStopIDs: stopIDs, arrivalWindows: windows)
         }.value
 
         var grouped = Dictionary(uniqueKeysWithValues: stopsByCode.keys.map { ($0, [StopCall]()) })

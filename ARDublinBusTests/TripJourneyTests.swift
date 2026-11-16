@@ -27,9 +27,9 @@ struct TripJourneyTests {
 
         #expect(journey.route.shortName == "27")
         #expect(journey.headsign == "Clare Hall")
-        #expect(journey.stops.map(\.stop.code) == ["115", "271"])
-        #expect(journey.stops.map(\.scheduled) == [.dublin(2026, 11, 16, 7, 50), .dublin(2026, 11, 16, 8, 10)])
-        #expect(journey.stops.map(\.hasPassed) == [true, false])
+        #expect(journey.stops.map(\.stop.code) == ["115", "271", "2711"])
+        #expect(journey.stops.map(\.scheduled) == [.dublin(2026, 11, 16, 7, 50), .dublin(2026, 11, 16, 8, 10), .dublin(2026, 11, 16, 8, 25)])
+        #expect(journey.stops.map(\.hasPassed) == [true, false, false])
         #expect(journey.stops.allSatisfy { !$0.isRealtime })
         #expect(journey.origin?.stop.code == "271")
         #expect(journey.shape.count == 3)

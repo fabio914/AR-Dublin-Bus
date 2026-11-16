@@ -132,6 +132,8 @@ happens once per download, in the background.
   Each is stored once, as a compact blob of coordinate differences rounded to about 1 m.
 - **Map queries:** stops have an SQLite R-tree index (`stops_index`), so the map loads only the
   stops in the visible area.
+- **Route badges:** the routes calling at each stop are stored once (`stop_routes`), for search
+  results and AR labels.
 - **Versioning:** the database records its schema version. If an app update changes the schema,
   the timetable is downloaded and built again.
 
@@ -182,6 +184,7 @@ answer so the app opens with something to show.
 | `Shared` | Code used by both apps: location and watch messages. |
 | `ARDublinBusTests` | Unit tests. |
 | `Config` | Build settings; `Secrets.xcconfig` holds your own values. |
+| `Generated` | Written at build time and git-ignored: your API key, compiled into the app in scrambled form. |
 | `docs` | Design notes and proposals. |
 
 ## Tests

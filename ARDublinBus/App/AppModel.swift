@@ -89,8 +89,11 @@ final class AppModel {
     }
 
     func saveAPIKey(_ key: String) {
+        let previous = keyStore.apiKey
         keyStore.save(key)
         hasAPIKey = keyStore.apiKey != nil
+        // Saving the same key again mustn't refetch the feed (the NTA asks for one fetch a minute).
+        guard keyStore.apiKey != previous else { return }
         Task {
             await service.realtimeClient.reset()
             if let code = activeStopCode { await refreshBoard(code) }

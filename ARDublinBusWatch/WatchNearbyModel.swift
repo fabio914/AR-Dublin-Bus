@@ -16,6 +16,12 @@ final class WatchNearbyModel {
     /// The latest answer from the phone (kept on disk so the app opens with something to show).
     private(set) var response: WatchNearbyResponse?
 
+    /// Why the last refresh failed, while an older answer is still on screen.
+    var refreshFailure: String? {
+        if case .failed(let message) = phase, response != nil { return message }
+        return nil
+    }
+
     @ObservationIgnored private let location = LocationProvider()
     @ObservationIgnored private let phone = PhoneConnection()
     @ObservationIgnored private var isRefreshing = false

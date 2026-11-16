@@ -13,7 +13,7 @@ import Foundation
 /// - `shapes.txt` is deduplicated by geometry and stored as one compact blob per shape.
 /// - Stops get an R-tree index for map queries.
 enum TimetableDatabaseBuilder {
-    static let schemaVersion = 1
+    static let schemaVersion = 3
 
     static let requiredFiles = ["stops.txt", "routes.txt", "trips.txt", "stop_times.txt"]
     static let optionalFiles = ["calendar.txt", "calendar_dates.txt", "feed_info.txt", "shapes.txt"]
@@ -31,14 +31,17 @@ enum TimetableDatabaseBuilder {
     CREATE TABLE patterns (id INTEGER PRIMARY KEY, calls BLOB NOT NULL);
     CREATE TABLE trips (
         id INTEGER PRIMARY KEY, trip_id TEXT NOT NULL, route INTEGER NOT NULL, service INTEGER NOT NULL,
-        headsign INTEGER NOT NULL, direction INTEGER, pattern INTEGER, start INTEGER, shape INTEGER
+        headsign INTEGER NOT NULL, pattern INTEGER, start INTEGER, shape INTEGER
     );
-    -- departure_offset: seconds after the trip's start; dwell: departure minus arrival.
+    -- departure_offset: seconds after the trip's start; dwell: departure minus arrival;
+    -- is_last: 1 at the final stop of a pattern with several stops (nobody boards there).
     CREATE TABLE pattern_stops (
         stop INTEGER NOT NULL, pattern INTEGER NOT NULL, sequence INTEGER NOT NULL,
-        departure_offset INTEGER NOT NULL, dwell INTEGER NOT NULL,
+        departure_offset INTEGER NOT NULL, dwell INTEGER NOT NULL, is_last INTEGER NOT NULL,
         PRIMARY KEY (stop, pattern, sequence)
     ) WITHOUT ROWID;
+    -- The routes calling at each stop, for the badges in search results and AR labels.
+    CREATE TABLE stop_routes (stop INTEGER NOT NULL, route INTEGER NOT NULL, PRIMARY KEY (stop, route)) WITHOUT ROWID;
     """
 
     static let indexes = """
@@ -109,7 +112,6 @@ enum TimetableDatabaseBuilder {
             let route: Int
             let service: Int
             let headsign: Int
-            let direction: Int?
             let shapeID: String?
         }
 
@@ -216,7 +218,6 @@ enum TimetableDatabaseBuilder {
                     route: try routeRow(routeID),
                     service: try serviceRow(serviceID),
                     headsign: headsignRow,
-                    direction: row.value("direction_id").flatMap(Int.init),
                     shapeID: row.value("shape_id")
                 ))
             }
@@ -317,8 +318,10 @@ enum TimetableDatabaseBuilder {
 
         mutating func writeTripsAndPatterns() throws {
             var patternRows: [[Int]: Int] = [:]
-            var patternStops: [(stop: Int32, pattern: Int32, sequence: Int32, offset: Int32, dwell: Int32)] = []
-            let insertTrip = try database.prepare("INSERT INTO trips VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
+            var patternStops: [(stop: Int32, pattern: Int32, sequence: Int32, offset: Int32, dwell: Int32, isLast: Bool)] = []
+            let insertTrip = try database.prepare("INSERT INTO trips VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
+            /// The routes using each pattern.
+            var routesByPattern: [Int: Set<Int>] = [:]
             let insertPattern = try database.prepare("INSERT INTO patterns VALUES (?, ?)")
 
             for (index, trip) in trips.enumerated() {
@@ -343,41 +346,53 @@ enum TimetableDatabaseBuilder {
                         let row = patternRows.count + 1
                         patternRows[key] = row
                         try insertPattern.run(row, ShapeCoding.encodeIntegers(key))
-                        for call in calls {
+                        for (position, call) in calls.enumerated() {
                             patternStops.append((call.stop, Int32(row), call.sequence,
-                                                 Int32(Int(call.departure) - tripStart), call.departure - call.arrival))
+                                                 Int32(Int(call.departure) - tripStart), call.departure - call.arrival,
+                                                 calls.count > 1 && position == calls.count - 1))
                         }
                         pattern = row
                     }
                     start = tripStart
                 }
+                if let pattern { routesByPattern[pattern, default: []].insert(trip.route) }
 
                 insertTrip.bind(index + 1, at: 1)
                 insertTrip.bind(trip.id, at: 2)
                 insertTrip.bind(trip.route, at: 3)
                 insertTrip.bind(trip.service, at: 4)
                 insertTrip.bind(trip.headsign, at: 5)
-                insertTrip.bind(trip.direction, at: 6)
-                insertTrip.bind(pattern, at: 7)
-                insertTrip.bind(start, at: 8)
-                insertTrip.bind(trip.shapeID.flatMap { shapeRows[$0] }, at: 9)
+                insertTrip.bind(pattern, at: 6)
+                insertTrip.bind(start, at: 7)
+                insertTrip.bind(trip.shapeID.flatMap { shapeRows[$0] }, at: 8)
                 _ = try insertTrip.step()
                 insertTrip.reset()
             }
 
             // Insert in primary-key order, which keeps the WITHOUT ROWID table compact.
             patternStops.sort { ($0.stop, $0.pattern, $0.sequence) < ($1.stop, $1.pattern, $1.sequence) }
-            let insert = try database.prepare("INSERT INTO pattern_stops VALUES (?, ?, ?, ?, ?)")
+            let insert = try database.prepare("INSERT INTO pattern_stops VALUES (?, ?, ?, ?, ?, ?)")
             for row in patternStops {
                 insert.bind(Int(row.stop), at: 1)
                 insert.bind(Int(row.pattern), at: 2)
                 insert.bind(Int(row.sequence), at: 3)
                 insert.bind(Int(row.offset), at: 4)
                 insert.bind(Int(row.dwell), at: 5)
+                insert.bind(row.isLast ? 1 : 0, at: 6)
                 _ = try insert.step()
                 insert.reset()
             }
             statistics.patterns = patternRows.count
+
+            // Every route of every pattern calling at a stop, once each, in primary-key order.
+            var stopRoutes: Set<[Int]> = []
+            for row in patternStops {
+                for route in routesByPattern[Int(row.pattern)] ?? [] { stopRoutes.insert([Int(row.stop), route]) }
+            }
+            let insertStopRoute = try database.prepare("INSERT INTO stop_routes VALUES (?, ?)")
+            for pair in stopRoutes.sorted(by: { ($0[0], $0[1]) < ($1[0], $1[1]) }) {
+                try insertStopRoute.run(pair[0], pair[1])
+            }
         }
 
         mutating func writeMeta() throws {
