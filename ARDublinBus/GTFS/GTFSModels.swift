@@ -1,3 +1,4 @@
+import CoreLocation
 import Foundation
 
 /// The time zone every Dublin Bus timetable is expressed in.
@@ -42,7 +43,7 @@ struct GTFSTrip: Hashable, Sendable {
     let headsign: String
 }
 
-/// One scheduled visit of a trip to a stop (a row of `stop_times.txt`).
+/// One scheduled visit of a trip to a stop (a row of `stop_times.txt`), with the trip's details.
 struct StopCall: Hashable, Sendable {
     let tripID: String
     let stopID: String
@@ -50,6 +51,55 @@ struct StopCall: Hashable, Sendable {
     let arrival: Int
     let departure: Int
     let stopSequence: Int
+    let routeID: String
+    let serviceID: String
+    let headsign: String
+
+    init(tripID: String, stopID: String, arrival: Int, departure: Int, stopSequence: Int,
+         routeID: String = "", serviceID: String = "", headsign: String = "") {
+        self.tripID = tripID
+        self.stopID = stopID
+        self.arrival = arrival
+        self.departure = departure
+        self.stopSequence = stopSequence
+        self.routeID = routeID
+        self.serviceID = serviceID
+        self.headsign = headsign
+    }
+}
+
+/// Identifies one run of a trip, as seen from the stop it was picked at.
+struct TripReference: Hashable, Sendable {
+    let tripID: String
+    let serviceDate: GTFSDate
+    /// The stop the user was looking at, highlighted on the line screen.
+    let stopID: String
+    let stopSequence: Int
+}
+
+/// A trip's full schedule and shape, from the timetable.
+struct TripDetails: Sendable {
+    struct Call: Sendable {
+        let stop: GTFSStop
+        let call: StopCall
+    }
+
+    let tripID: String
+    let route: GTFSRoute
+    let headsign: String
+    let serviceID: String
+    /// Every stop in order of `stopSequence`.
+    let calls: [Call]
+    /// The route's path; empty if the feed has no shape for this trip.
+    let shape: [CLLocationCoordinate2D]
+}
+
+/// A latitude/longitude rectangle, e.g. the visible part of a map.
+struct CoordinateBounds: Hashable, Sendable {
+    var minLatitude: Double
+    var maxLatitude: Double
+    var minLongitude: Double
+    var maxLongitude: Double
 }
 
 /// A calendar date in GTFS terms (`YYYYMMDD`), independent of time zone.

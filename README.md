@@ -17,7 +17,14 @@ any stop by number, and includes an Apple Watch app.
   to face you and refreshes every 15 seconds.
 - **Nearby:** uses your location to list the stops within 600 m, nearest first, each with its
   next buses, plus a merged "Next buses" list across all of them.
-- **Look up:** shows the board for any stop number you type.
+- **Look up:** search by stop number or name. Matching stops are listed as you type, with the
+  routes that call at each. Names match regardless of case, accents and apostrophes, and the
+  abbreviations in stop names are understood ("oconnell street lower" finds "O'Connell St Lwr").
+- **Map:** every bus stop on a map, clustered when zoomed out. Tap a stop to see its board in a
+  half-height sheet, with the map still usable behind it.
+- **Line view:** tap a bus on any board (Map, Nearby or Look up) to see its route on a map and
+  every stop it calls at, with live times, the stop you picked it from highlighted, and the stops
+  it has already passed greyed out.
 - **Apple Watch:** shows the stops near you as pages you swipe between, each with its next buses
   and live ETAs.
 - **Live times:** uses the NTA's GTFS-Realtime feed when you provide an API key, and falls back
@@ -55,8 +62,8 @@ any stop by number, and includes an Apple Watch app.
 4. Open `ARDublinBus.xcodeproj`, select the `ARDublinBus` scheme and run it on your iPhone. The
    watch app is embedded in the iPhone app and installs with it.
 
-On first launch the app downloads the Dublin Bus timetable (about 42 MB), so the first board
-takes a little longer.
+On first launch the app downloads the Dublin Bus timetable (about 42 MB) and converts it into a
+local database, so the first board takes a little longer.
 
 ### Trying it in the Simulator
 
@@ -67,7 +74,7 @@ O'Connell Street:
 xcrun simctl location booted set 53.348596,-6.259485
 ```
 
-Then open Nearby, or look up stop 271.
+Then open Nearby or the Map, or look up stop 271.
 
 ## How it works
 
@@ -94,9 +101,9 @@ after "Stop" (or the Irish "Stad") is accepted, so route numbers aren't mistaken
 ### 3. Fetching departures
 
 - **Timetable:** the NTA's Dublin Bus GTFS feed (`GTFS_Dublin_Bus.zip`) is downloaded on first
-  launch and refreshed every 3 days. `stop_times.txt` (about 200 MB) is memory-mapped and
-  searched for the stops needed instead of being parsed in full. Several stops are found in a
-  single pass.
+  launch and refreshed every 3 days. `TimetableDatabaseBuilder` converts its ~260 MB of CSV files
+  into a SQLite database of about 15 MB, and the CSV files are then deleted. See
+  [The timetable database](#the-timetable-database).
 - **Live data:** the NTA GTFS-Realtime API (`/gtfsr/v2/TripUpdates?format=json`). Delays are
   applied following GTFS-Realtime rules: an exact stop match first, otherwise the delay is
   carried forward from an earlier stop. Cancelled trips and skipped stops are marked, buses that
@@ -107,6 +114,26 @@ after "Stop" (or the Irish "Stad") is accepted, so route numbers aren't mistaken
 
 A SwiftUI view is rendered with `ImageRenderer` into an unlit RealityKit texture. The panel hangs
 below the pictogram and turns to face you.
+
+### The timetable database
+
+Building it takes about 2 seconds in an optimised build (around 9 seconds in a Debug build) and
+happens once per download, in the background.
+
+- **Trip patterns:** most trips repeat another trip's stops with the same gaps between them,
+  starting at a different time. So the 3.9 million rows of `stop_times.txt` become 7,193 patterns
+  (`pattern_stops`, about 390,000 rows), and each trip stores its pattern and start time. A stop's
+  calls are found by joining its patterns with the trips that use them, in a couple of
+  milliseconds.
+- **Shapes:** the 1,263 route shapes in `shapes.txt` (52 MB) have only 333 distinct geometries.
+  Each is stored once, as a compact blob of coordinate differences rounded to about 1 m.
+- **Map queries:** stops have an SQLite R-tree index (`stops_index`), so the map loads only the
+  stops in the visible area.
+- **Versioning:** the database records its schema version. If an app update changes the schema,
+  the timetable is downloaded and built again.
+
+Stops, routes and the service calendar are small and kept in memory; trips, calls and shapes are
+read from the database when needed (`StaticTimetable`).
 
 ### Apple Watch
 
@@ -122,10 +149,11 @@ answer so the app opens with something to show.
 | --- | --- |
 | `ARDublinBus/AR` | Sign detection, the AR session and the floating panel. |
 | `ARDublinBus/OCR` | Stop number reading and parsing. |
-| `ARDublinBus/GTFS` | Timetable download, storage and lookup. |
+| `ARDublinBus/GTFS` | Timetable download, the SQLite timetable database and its lookups. |
 | `ARDublinBus/Realtime` | GTFS-Realtime client and models. |
-| `ARDublinBus/Departures` | Merges timetable and live data into boards. |
-| `ARDublinBus/UI` | SwiftUI screens: AR view, Nearby, Look up, stop board. |
+| `ARDublinBus/Departures` | Merges timetable and live data into boards and trip journeys. |
+| `ARDublinBus/Map` | The clustered map of stops (`MKMapView`). |
+| `ARDublinBus/UI` | SwiftUI screens: AR view, Nearby, Look up, stop board, line view. |
 | `ARDublinBus/Watch` | Answers requests from the watch app. |
 | `ARDublinBusWatch` | The watchOS app. |
 | `Shared` | Code used by both apps: location and watch messages. |
@@ -145,7 +173,7 @@ Some extra checks run against real data when these environment variables are set
 
 | Variable | Value |
 | --- | --- |
-| `TEST_RUNNER_GTFS_DIR` | An extracted Dublin Bus GTFS folder. |
+| `TEST_RUNNER_GTFS_DIR` | An extracted Dublin Bus GTFS folder. The tests build the database from it and compare it with `stop_times.txt`. |
 | `TEST_RUNNER_REALTIME_JSON` | A saved `TripUpdates?format=json` response. |
 | `TEST_RUNNER_SIGN_PHOTO` | An upright photo of a stop flag. |
 | `TEST_RUNNER_SIGN_QUAD` | Corners of the "Stop …" line in that photo, in pixels: `tlx,tly,trx,try,brx,bry,blx,bly`. |

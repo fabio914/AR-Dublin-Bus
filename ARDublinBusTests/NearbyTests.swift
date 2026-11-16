@@ -35,44 +35,6 @@ struct NearbyTests {
         #expect(nearby.first?.stop.code == "271")
     }
 
-    @Test func singlePassScanMatchesPerStopScan() throws {
-        let fixture = try GTFSFixture()
-        let url = fixture.directory.appendingPathComponent("stop_times.txt")
-        let ids: Set<String> = [GTFSFixture.stopID, "8220DB000115", "8220DB0002711", "missing"]
-
-        let perStop = try StaticTimetable.scanStopTimes(at: url, stopIDs: ids, strategy: .perStop)
-        let singlePass = try StaticTimetable.scanStopTimes(at: url, stopIDs: ids, strategy: .singlePass)
-
-        #expect(Set(perStop) == Set(singlePass))
-        #expect(perStop.count == singlePass.count)
-        // The "X8220DB000271" row must not match.
-        #expect(!singlePass.contains { $0.stopSequence == 11 })
-        #expect(Set(singlePass.map(\.stopID)) == [GTFSFixture.stopID, "8220DB000115", "8220DB0002711"])
-    }
-
-    @Test func singlePassHandlesQuotedAndPaddedFields() throws {
-        let fixture = try GTFSFixture(stopTimes: """
-        trip_id,arrival_time,departure_time,stop_id,stop_sequence
-        "T1,quoted",08:00:00,08:00:00,8220DB000271,1
-        T2,08:05:00,08:05:00, 8220DB000271 ,2
-        T3,08:10:00,08:10:00,8220DB000115,3
-        """)
-        let url = fixture.directory.appendingPathComponent("stop_times.txt")
-        let calls = try StaticTimetable.scanStopTimes(at: url, stopIDs: [GTFSFixture.stopID, "a", "b"], strategy: .singlePass)
-        #expect(Set(calls.map(\.tripID)) == ["T1,quoted", "T2"])
-    }
-
-    @Test func perStopScanDoesNotDuplicateLines() throws {
-        // The trip ID contains another wanted stop's ID.
-        let fixture = try GTFSFixture(stopTimes: """
-        trip_id,arrival_time,departure_time,stop_id,stop_sequence
-        trip-8220DB000115,08:00:00,08:00:00,8220DB000271,1
-        """)
-        let url = fixture.directory.appendingPathComponent("stop_times.txt")
-        let calls = try StaticTimetable.scanStopTimes(at: url, stopIDs: [GTFSFixture.stopID, "8220DB000115"], strategy: .perStop)
-        #expect(calls.count == 1)
-    }
-
     @Test func mergeKeepsClosestStopAndSortsByTime() {
         let now = Date.dublin(2026, 11, 16, 8, 0)
         func departure(_ id: String, _ minutes: Double) -> Departure {
@@ -99,15 +61,15 @@ struct NearbyTests {
         #expect(NearbyDepartures.merge([(stop: near, board: board("1", (0..<40).map { departure("\($0)", Double($0)) }))]).count == 25)
     }
 
-    @Test(.enabled(if: ProcessInfo.processInfo.environment["GTFS_DIR"] != nil))
-    func realFeedNearbyStopsScanQuickly() throws {
-        let timetable = try StaticTimetable.load(from: URL(fileURLWithPath: ProcessInfo.processInfo.environment["GTFS_DIR"]!))
+    @Test(.enabled(if: RealGTFS.directory != nil))
+    func realFeedNearbyStopsQueryQuickly() throws {
+        let timetable = try RealGTFS.timetable()
         let nearby = timetable.stops(near: oConnellStLower, within: 600, limit: 12)
         let ids = nearby.reduce(into: Set<String>()) { $0.formUnion($1.stopIDs) }
 
         var calls: [StopCall] = []
         let elapsed = try ContinuousClock().measure { calls = try timetable.calls(atStopIDs: ids) }
-        print("Real feed: \(nearby.count) stops within 600 m of 271, \(calls.count) calls, single-pass scan \(elapsed)")
+        print("Real feed: \(nearby.count) stops within 600 m of 271, \(calls.count) calls, queried in \(elapsed)")
         print("  ", nearby.map { "\($0.stop.code) \($0.stop.name) \(Int($0.distance))m" })
 
         #expect(nearby.first?.stop.code == "271")

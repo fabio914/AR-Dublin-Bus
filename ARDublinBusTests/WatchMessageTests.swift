@@ -54,6 +54,7 @@ struct WatchMessageTests {
     /// The full phone-side path, from a watch request to its reply, against the fixture timetable.
     @Test func responderAnswersFromTheTimetable() async throws {
         let fixture = try GTFSFixture()
+        _ = try fixture.load()
         // Mark the fixture as already downloaded so the store doesn't fetch the real feed.
         try ISO8601DateFormatter().string(from: .now)
             .write(to: fixture.directory.appendingPathComponent("downloaded-at.txt"), atomically: true, encoding: .utf8)

@@ -1,6 +1,7 @@
 import SwiftUI
 
 /// A live-updating departures board for one stop (same look as the AR panel).
+/// Tapping a bus opens its line, so use it inside a `NavigationStack` with `tripDestination()`.
 struct StopBoardView: View {
     @Environment(AppModel.self) private var model
     let stopCode: String
@@ -8,7 +9,7 @@ struct StopBoardView: View {
 
     var body: some View {
         TimelineView(.periodic(from: .now, by: 20)) { context in
-            DeparturesPanelView(content: content ?? .loading(stopCode: stopCode), now: context.date, maximumRows: 12)
+            DeparturesPanelView(content: content ?? .loading(stopCode: stopCode), now: context.date, maximumRows: 12, linksToTrips: true)
                 .shadow(color: .black.opacity(0.15), radius: 12, y: 4)
         }
         .task(id: stopCode) {

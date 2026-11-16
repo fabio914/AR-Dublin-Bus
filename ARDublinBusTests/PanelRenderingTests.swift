@@ -42,9 +42,9 @@ struct PanelRenderingTests {
         }
     }
 
-    @Test(.enabled(if: ProcessInfo.processInfo.environment["GTFS_DIR"] != nil))
+    @Test(.enabled(if: RealGTFS.directory != nil))
     func rendersRealStop271() throws {
-        let timetable = try StaticTimetable.load(from: URL(fileURLWithPath: ProcessInfo.processInfo.environment["GTFS_DIR"]!))
+        let timetable = try RealGTFS.timetable()
         let stops = try #require(timetable.stopsByCode["271"])
         let ids = Set(stops.map(\.id))
         let now = Date.dublin(2026, 11, 16, 8, 0) // a Monday morning

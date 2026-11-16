@@ -51,6 +51,10 @@ Compile the existing timetable, realtime and departure code (`GTFS/`, `Realtime/
 
 ## Option 2: hybrid, with a compact timetable synced from the iPhone (recommended on-device option)
 
+> **Update:** the iPhone now stores the timetable as a compact SQLite database (see "The timetable
+> database" in the README): about 15 MB for all of Dublin, 4–5 MB zipped. That database could be
+> the extract sent to the watch as it is, without limiting the area covered.
+
 The iPhone, which already has the full timetable, builds a **compact extract** and sends it
 to the watch in the background with `WCSession.transferFile`:
 
@@ -130,7 +134,7 @@ iPhone app, call it directly.
 ## Open questions
 
 - Timetable scope for Option 2: all of Dublin, or just areas where the app has been used?
-  This needs measuring: build the extract for all stops and check its size.
+  Measured since: the whole of Dublin is about 15 MB (4–5 MB zipped), so all of it fits.
 - Should realtime fetches without the iPhone be allowed over cellular, or Wi-Fi only?
 - For Option 3: hosting platform, and whether the iPhone app should also switch to the server.
 - Does the NTA offer the realtime feed in protobuf (smaller than JSON), and how much smaller

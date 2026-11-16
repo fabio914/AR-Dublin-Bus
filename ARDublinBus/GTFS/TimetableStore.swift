@@ -10,7 +10,8 @@ enum TimetablePhase: Equatable, Sendable {
     case failed(message: String)
 }
 
-/// Downloads the NTA's static Dublin Bus GTFS feed, keeps it on disk and loads it.
+/// Downloads the NTA's static Dublin Bus GTFS feed, converts it into the timetable
+/// database (see `TimetableDatabaseBuilder`) and opens it.
 ///
 /// The realtime (GTFS-R) trip IDs refer to this schedule, so it is refreshed
 /// when older than `maximumAge`.
@@ -40,7 +41,11 @@ actor TimetableStore {
             .appendingPathComponent("GTFS", isDirectory: true)
     }
 
-    private var metadataURL: URL { directory.appendingPathComponent("downloaded-at.txt") }
+    private var metadataURL: URL { directory.appendingPathComponent(Self.metadataFileName) }
+    private var databaseURL: URL { directory.appendingPathComponent(Self.databaseFileName) }
+
+    static let metadataFileName = "downloaded-at.txt"
+    static let databaseFileName = "timetable.sqlite"
 
     func setPhaseHandler(_ handler: @escaping @Sendable (TimetablePhase) -> Void) {
         phaseHandler = handler
@@ -83,38 +88,47 @@ actor TimetableStore {
 
     private func load(forceDownload: Bool) async throws -> StaticTimetable {
         let downloadedAt = downloadDate()
-        let haveFiles = downloadedAt != nil && StaticTimetable.requiredFiles.allSatisfy {
-            FileManager.default.fileExists(atPath: directory.appendingPathComponent($0).path)
-        }
+        let haveDatabase = downloadedAt != nil && FileManager.default.fileExists(atPath: databaseURL.path)
+        var downloaded = false
 
-        if forceDownload || !haveFiles {
-            try await downloadAndExtract()
+        if forceDownload || !haveDatabase {
+            try await downloadAndBuild()
+            downloaded = true
         }
 
         report(.indexing)
-        let directory = self.directory
-        let timetable = try await Task.detached(priority: .userInitiated) {
-            try StaticTimetable.load(from: directory)
-        }.value
-        let date = downloadDate() ?? .now
-        report(.ready(downloadedAt: date))
+        let timetable: StaticTimetable
+        do {
+            timetable = try await openDatabase()
+        } catch _ where !downloaded {
+            // Built by an older version of the app, or damaged: start again.
+            try await downloadAndBuild()
+            downloaded = true
+            timetable = try await openDatabase()
+        }
+        report(.ready(downloadedAt: downloadDate() ?? .now))
 
         // Keep using the cached copy, but fetch a newer one in the background when stale.
-        if !forceDownload, haveFiles, let downloadedAt, Date.now.timeIntervalSince(downloadedAt) > maximumAge {
+        if !downloaded, let downloadedAt, Date.now.timeIntervalSince(downloadedAt) > maximumAge {
             Task { try? await self.refreshInBackground() }
         }
         return timetable
     }
 
+    private func openDatabase() async throws -> StaticTimetable {
+        let url = databaseURL
+        return try await Task.detached(priority: .userInitiated) {
+            try StaticTimetable.open(databaseAt: url)
+        }.value
+    }
+
     private func refreshInBackground() async throws {
-        try await downloadAndExtract()
-        let directory = self.directory
-        let fresh = try await Task.detached(priority: .utility) { try StaticTimetable.load(from: directory) }.value
-        timetable = fresh
+        try await downloadAndBuild()
+        timetable = try await openDatabase()
         report(.ready(downloadedAt: downloadDate() ?? .now))
     }
 
-    private func downloadAndExtract() async throws {
+    private func downloadAndBuild() async throws {
         report(.downloading(progress: 0))
         let zipURL = try await ProgressDownloader.download(feedURL) { [weak self] fraction in
             Task { await self?.report(.downloading(progress: fraction)) }
@@ -123,32 +137,48 @@ actor TimetableStore {
 
         report(.extracting)
         let directory = self.directory
-        let metadataURL = self.metadataURL
+        let staging = directory.deletingLastPathComponent()
+            .appendingPathComponent("GTFS-staging-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: staging) }
+
         try await Task.detached(priority: .userInitiated) {
-            try Self.extract(zipURL: zipURL, into: directory)
-            try ISO8601DateFormatter().string(from: .now).write(to: metadataURL, atomically: true, encoding: .utf8)
+            try Self.extract(zipURL: zipURL, into: staging)
+        }.value
+
+        report(.indexing)
+        try await Task.detached(priority: .userInitiated) {
+            try Self.buildDatabase(in: staging)
+            try Self.install(staging, at: directory)
         }.value
     }
 
-    /// Extracts only the files the app needs (skipping e.g. the large `shapes.txt`)
-    /// into a staging folder, then swaps it into place.
-    private static func extract(zipURL: URL, into directory: URL) throws {
-        let fileManager = FileManager.default
-        let staging = directory.deletingLastPathComponent()
-            .appendingPathComponent("GTFS-staging-\(UUID().uuidString)", isDirectory: true)
-        try fileManager.createDirectory(at: staging, withIntermediateDirectories: true)
-        defer { try? fileManager.removeItem(at: staging) }
-
+    /// Extracts only the files the timetable needs into `staging`.
+    private static func extract(zipURL: URL, into staging: URL) throws {
+        try FileManager.default.createDirectory(at: staging, withIntermediateDirectories: true)
         let archive = try Archive(url: zipURL, accessMode: .read)
-        for name in StaticTimetable.requiredFiles + StaticTimetable.optionalFiles {
+        for name in TimetableDatabaseBuilder.requiredFiles + TimetableDatabaseBuilder.optionalFiles {
             let entry = archive[name] ?? archive.first { $0.path.hasSuffix("/" + name) }
             guard let entry else {
-                if StaticTimetable.requiredFiles.contains(name) { throw TimetableError.missingFile(name) }
+                if TimetableDatabaseBuilder.requiredFiles.contains(name) { throw TimetableError.missingFile(name) }
                 continue
             }
             _ = try archive.extract(entry, to: staging.appendingPathComponent(name), skipCRC32: true)
         }
+    }
 
+    /// Builds the database next to the CSV files, then deletes them: only the database is kept.
+    private static func buildDatabase(in staging: URL) throws {
+        try TimetableDatabaseBuilder.build(fromGTFS: staging, to: staging.appendingPathComponent(databaseFileName))
+        for name in TimetableDatabaseBuilder.requiredFiles + TimetableDatabaseBuilder.optionalFiles {
+            try? FileManager.default.removeItem(at: staging.appendingPathComponent(name))
+        }
+        try ISO8601DateFormatter().string(from: .now)
+            .write(to: staging.appendingPathComponent(metadataFileName), atomically: true, encoding: .utf8)
+    }
+
+    /// Swaps the staging folder into place.
+    private static func install(_ staging: URL, at directory: URL) throws {
+        let fileManager = FileManager.default
         if fileManager.fileExists(atPath: directory.path) {
             try fileManager.removeItem(at: directory)
         }

@@ -9,6 +9,8 @@ struct Departure: Identifiable, Hashable, Sendable {
     /// Whether `expected` comes from live (GTFS-R) data rather than the timetable.
     let isRealtime: Bool
     let isCancelled: Bool
+    /// The scheduled trip, for showing its line. `nil` for trips added by the live feed.
+    var trip: TripReference? = nil
 
     var delay: TimeInterval { expected.timeIntervalSince(scheduled) }
 
@@ -62,8 +64,7 @@ struct DepartureCalculator {
                 let scheduled = reference.addingTimeInterval(TimeInterval(call.arrival))
                 guard scheduled >= earliest.addingTimeInterval(-maximumLateness),
                       scheduled <= latest.addingTimeInterval(30 * 60),
-                      let trip = timetable.trips[call.tripID],
-                      timetable.services.isActive(trip.serviceID, on: serviceDate, calendar: calendar) else { continue }
+                      timetable.services.isActive(call.serviceID, on: serviceDate, calendar: calendar) else { continue }
 
                 let status = realtime?.update(forTripID: call.tripID, serviceDate: serviceDate)
                     .map { Self.status(of: $0, at: call, stopIDs: stopIDs) } ?? .scheduledOnly
@@ -79,12 +80,13 @@ struct DepartureCalculator {
 
                 results.append(Departure(
                     id: "\(call.tripID)@\(serviceDate)",
-                    route: timetable.routes[trip.routeID]?.shortName ?? trip.routeID,
-                    destination: trip.headsign,
+                    route: timetable.routes[call.routeID]?.shortName ?? call.routeID,
+                    destination: call.headsign,
                     scheduled: scheduled,
                     expected: expected,
                     isRealtime: status != .scheduledOnly && status != .cancelled,
-                    isCancelled: status == .cancelled
+                    isCancelled: status == .cancelled,
+                    trip: TripReference(tripID: call.tripID, serviceDate: serviceDate, stopID: call.stopID, stopSequence: call.stopSequence)
                 ))
             }
         }

@@ -30,6 +30,8 @@ struct DepartureCalculatorTests {
         #expect(result.first?.route == "27")
         #expect(result[3].route == "44")
         #expect(result[3].destination == "Enniskerry")
+        #expect(result.first?.trip == TripReference(tripID: "T3", serviceDate: GTFSDate(year: 2026, month: 11, day: 16),
+                                                    stopID: GTFSFixture.stopID, stopSequence: 10))
         // T8 runs at weekends only; T9 is beyond the 90-minute window.
         #expect(!result.contains { $0.id.hasPrefix("T8") || $0.id.hasPrefix("T9") })
     }

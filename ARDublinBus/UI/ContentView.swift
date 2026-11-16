@@ -6,6 +6,7 @@ struct ContentView: View {
     @State private var showingSettings = false
     @State private var showingLookup = false
     @State private var showingNearby = false
+    @State private var showingMap = false
 
     var body: some View {
         ZStack {
@@ -17,17 +18,25 @@ struct ContentView: View {
             }
 
             VStack(spacing: 10) {
-                HStack(alignment: .top) {
+                HStack {
                     StatusBadge(model: model)
-                    Spacer()
-                    toolbarButton("location.fill", label: "Stops near me") { showingNearby = true }
-                    toolbarButton("magnifyingglass", label: "Look up a stop") { showingLookup = true }
-                    toolbarButton("gearshape.fill", label: "Settings") { showingSettings = true }
+                    Spacer(minLength: 0)
                 }
                 TimetableBanner(phase: model.timetablePhase, retry: model.retryTimetable)
                 Spacer()
-                if !model.hasAPIKey {
-                    APIKeyHint { showingSettings = true }
+                HStack(alignment: .bottom, spacing: 12) {
+                    if !model.hasAPIKey {
+                        APIKeyHint { showingSettings = true }
+                    } else {
+                        Spacer()
+                    }
+                    // Within thumb reach, and out of the way of the camera view.
+                    VStack(spacing: 12) {
+                        toolbarButton("location.fill", label: "Stops near me") { showingNearby = true }
+                        toolbarButton("map.fill", label: "Map of bus stops") { showingMap = true }
+                        toolbarButton("magnifyingglass", label: "Look up a stop") { showingLookup = true }
+                        toolbarButton("gearshape.fill", label: "Settings") { showingSettings = true }
+                    }
                 }
             }
             .padding(.horizontal, 16)
@@ -41,6 +50,9 @@ struct ContentView: View {
         }
         .sheet(isPresented: $showingNearby) {
             NearbyStopsView()
+        }
+        .sheet(isPresented: $showingMap) {
+            StopsMapView()
         }
         .task {
             if !ARWorldTrackingConfiguration.isSupported { model.trackingStatus = .unsupported }
