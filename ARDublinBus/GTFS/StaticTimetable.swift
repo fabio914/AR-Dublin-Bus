@@ -250,10 +250,9 @@ final class StaticTimetable: @unchecked Sendable {
     func withRoutes(_ stops: [GTFSStop]) throws -> [StopSearchResult] {
         try withDatabase { database in
             let routeQuery = try database.prepare("""
-                SELECT DISTINCT r.short_name FROM pattern_stops ps
-                JOIN trips t ON t.pattern = ps.pattern
-                JOIN routes r ON r.id = t.route
-                WHERE ps.stop = ?
+                SELECT r.short_name FROM stop_routes sr
+                JOIN routes r ON r.id = sr.route
+                WHERE sr.stop = ?
                 """)
             return try stops.map { stop in
                 var routes: Set<String> = []

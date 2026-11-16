@@ -132,6 +132,8 @@ happens once per download, in the background.
   Each is stored once, as a compact blob of coordinate differences rounded to about 1 m.
 - **Map queries:** stops have an SQLite R-tree index (`stops_index`), so the map loads only the
   stops in the visible area.
+- **Route badges:** the routes calling at each stop are stored once (`stop_routes`), for search
+  results and AR labels.
 - **Versioning:** the database records its schema version. If an app update changes the schema,
   the timetable is downloaded and built again.
 

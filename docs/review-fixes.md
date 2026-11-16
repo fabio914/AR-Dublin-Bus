@@ -38,7 +38,7 @@ Each fix is one commit on the `review-fixes` branch.
 - [x] **11. Settings "Save" bypasses the realtime throttle.** Saving without changing the key
   still clears the cache and refetches the feed.
 - [x] **12. Board query loads every call at the stop.** Restrict it to the time window in SQL.
-- [ ] **13. Route badges run a join per stop.** Store each stop's routes in a `stop_routes`
+- [x] **13. Route badges run a join per stop.** Store each stop's routes in a `stop_routes`
   table when the database is built (schema version 2; also drops the unused
   `trips.direction` column).
 - [ ] **14. Timetable swap isn't atomic, and refreshes can overlap.** Replace the folder in
