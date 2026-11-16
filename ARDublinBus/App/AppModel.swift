@@ -33,6 +33,19 @@ final class AppModel {
     private(set) var knownStopCodes: Set<String>?
     private(set) var hasAPIKey: Bool
 
+    /// Nearby stops shown as labels in the AR view.
+    var showsARStops: Bool {
+        didSet {
+            UserDefaults.standard.set(showsARStops, forKey: Self.showsARStopsKey)
+            onShowsARStopsChange?(showsARStops)
+        }
+    }
+    var arStopsStatus = ARStopsStatus()
+    /// A stop tapped in the AR view, whose board is shown in a sheet.
+    var selectedARStop: GTFSStop?
+    @ObservationIgnored var onShowsARStopsChange: ((Bool) -> Void)?
+    private static let showsARStopsKey = "showsARStops"
+
     /// Called whenever `panelContent` changes, so the AR panel can be re-rendered.
     @ObservationIgnored var onPanelContentChange: ((PanelContent) -> Void)?
     @ObservationIgnored private var refreshTask: Task<Void, Never>?
@@ -43,6 +56,7 @@ final class AppModel {
     init(keyStore: APIKeyStore = .shared) {
         self.keyStore = keyStore
         hasAPIKey = keyStore.apiKey != nil
+        showsARStops = UserDefaults.standard.object(forKey: Self.showsARStopsKey) as? Bool ?? true
         service = DepartureService(
             timetableStore: TimetableStore(),
             realtimeClient: RealtimeClient(apiKey: { keyStore.apiKey })

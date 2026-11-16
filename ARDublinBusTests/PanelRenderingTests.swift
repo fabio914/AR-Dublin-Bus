@@ -42,6 +42,21 @@ struct PanelRenderingTests {
         }
     }
 
+    /// The floating label over a nearby stop in AR.
+    @Test func rendersStopPin() throws {
+        let stop = ARStop(stop: GTFSStop(id: "x", code: "271", name: "O'Connell St Lwr", latitude: nil, longitude: nil),
+                          routes: ["1", "11", "11B", "44", "44D", "53", "122"])
+        let renderer = ImageRenderer(content: StopPinView(stop: stop, distance: 140))
+        renderer.scale = 3
+        renderer.isOpaque = false
+        let image = try #require(renderer.cgImage)
+        #expect(image.width > image.height)
+        if let directory = ProcessInfo.processInfo.environment["RENDER_DIR"] {
+            let data = try #require(UIImage(cgImage: image).pngData())
+            try data.write(to: URL(fileURLWithPath: directory).appendingPathComponent("stop-pin.png"))
+        }
+    }
+
     @Test(.enabled(if: RealGTFS.directory != nil))
     func rendersRealStop271() throws {
         let timetable = try RealGTFS.timetable()

@@ -1,4 +1,5 @@
 import CoreLocation
+import simd
 import Foundation
 
 /// Everything the departures panel shows for one stop.
@@ -101,6 +102,30 @@ actor DepartureService {
         let timetable = try await timetableStore.loadedTimetable()
         return try await Task.detached(priority: .userInitiated) {
             try timetable.searchStops(query, limit: limit)
+        }.value
+    }
+
+    /// Stops within `radius` metres of `coordinate`, nearest first, with their routes: the pins
+    /// shown in AR.
+    func arStops(around coordinate: CLLocationCoordinate2D, radius: CLLocationDistance, limit: Int) async throws -> [ARStop] {
+        let timetable = try await timetableStore.loadedTimetable()
+        return try await Task.detached(priority: .userInitiated) {
+            let plane = LocalTangentPlane(reference: coordinate)
+            let span = plane.coordinate(at: SIMD2(radius, radius))
+            let bounds = CoordinateBounds(
+                minLatitude: 2 * coordinate.latitude - span.latitude, maxLatitude: span.latitude,
+                minLongitude: 2 * coordinate.longitude - span.longitude, maxLongitude: span.longitude
+            )
+            let nearest = try timetable.stops(in: bounds, limit: 2000).stops
+                .compactMap { stop -> (stop: GTFSStop, distance: Double)? in
+                    guard let position = stop.coordinate else { return nil }
+                    let distance = simd_length(plane.offset(of: position))
+                    return distance <= radius ? (stop, distance) : nil
+                }
+                .sorted { $0.distance < $1.distance }
+                .prefix(limit)
+                .map(\.stop)
+            return try timetable.withRoutes(nearest).map { ARStop(stop: $0.stop, routes: $0.routes) }
         }.value
     }
 

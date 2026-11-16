@@ -18,10 +18,11 @@ struct ContentView: View {
             }
 
             VStack(spacing: 10) {
-                HStack {
+                VStack(alignment: .leading, spacing: 6) {
                     StatusBadge(model: model)
-                    Spacer(minLength: 0)
+                    ARStopsBadge(status: model.arStopsStatus)
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
                 TimetableBanner(phase: model.timetablePhase, retry: model.retryTimetable)
                 Spacer()
                 HStack(alignment: .bottom, spacing: 12) {
@@ -53,6 +54,9 @@ struct ContentView: View {
         }
         .sheet(isPresented: $showingMap) {
             StopsMapView()
+        }
+        .sheet(item: Bindable(model).selectedARStop) { stop in
+            StopBoardSheet(stop: stop) { model.selectedARStop = nil }
         }
         .task {
             if !ARWorldTrackingConfiguration.isSupported { model.trackingStatus = .unsupported }
@@ -115,6 +119,49 @@ private struct StatusBadge: View {
         case .tracking(let code): "Stop \(code)"
         case .unsupported: "AR isn't supported on this device"
         case .failed(let message): message
+        }
+    }
+}
+
+/// How nearby stops are placed in the AR view.
+private struct ARStopsBadge: View {
+    let status: ARStopsStatus
+
+    var body: some View {
+        if let text {
+            Label(text, systemImage: icon)
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(.white)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 6)
+                .background(.black.opacity(0.45), in: Capsule())
+                .animation(.default, value: text)
+        }
+    }
+
+    private var icon: String {
+        status.mode == .geo ? "location.viewfinder" : "mappin.and.ellipse"
+    }
+
+    private var stops: String {
+        status.stopCount == 1 ? "1 stop nearby" : "\(status.stopCount) stops nearby"
+    }
+
+    private var text: String? {
+        switch status.mode {
+        case .off:
+            nil
+        case .waitingForLocation:
+            "Finding stops around you…"
+        case .compass, .geoLocalizing:
+            [
+                stops,
+                status.isCorrectedBySign ? "aligned to a sign"
+                    : status.expectedError.map { "GPS ±\(Int($0.rounded())) m" },
+                status.mode == .geoLocalizing ? "point at buildings to sharpen" : nil,
+            ].compactMap { $0 }.joined(separator: " · ")
+        case .geo:
+            "\(stops) · location anchors"
         }
     }
 }

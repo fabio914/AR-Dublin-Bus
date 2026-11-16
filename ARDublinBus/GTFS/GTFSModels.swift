@@ -20,6 +20,13 @@ struct GTFSStop: Hashable, Sendable {
     let longitude: Double?
 }
 
+extension GTFSStop {
+    var coordinate: CLLocationCoordinate2D? {
+        guard let latitude, let longitude else { return nil }
+        return CLLocationCoordinate2D(latitude: latitude, longitude: longitude)
+    }
+}
+
 /// A stop (all GTFS stops sharing one stop code) and its distance from the user.
 struct NearbyStop: Hashable, Sendable, Identifiable {
     let stop: GTFSStop

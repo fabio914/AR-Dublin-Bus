@@ -214,10 +214,3 @@ private struct TripStopRow: View {
         }
     }
 }
-
-extension GTFSStop {
-    var coordinate: CLLocationCoordinate2D? {
-        guard let latitude, let longitude else { return nil }
-        return CLLocationCoordinate2D(latitude: latitude, longitude: longitude)
-    }
-}
