@@ -61,8 +61,10 @@ Not done on this branch:
 
 - **Continuous integration.** A GitHub Actions job running `xcodegen generate` and
   `xcodebuild test`.
-- **Protobuf realtime feed.** The whole-network feed is fetched as JSON every minute; the
-  protobuf form is much smaller but needs a decoder dependency.
+- [x] **Protobuf realtime feed.** Implemented on the `protobuf-feed` branch: the app now
+  fetches `TripUpdates?format=protobuf` (~0.55 MB instead of ~3.2 MB as JSON) and reads it with
+  a small built-in decoder for the fields it uses (`ARDublinBus/Realtime/GTFSRealtimeProtobuf.swift`),
+  so no dependency was needed.
 - **Strict concurrency.** Turn on `SWIFT_STRICT_CONCURRENCY: complete` and work through the
   `@unchecked Sendable` and `assumeIsolated` uses, towards Swift 6 mode.
 - **Dynamic Type.** The boards use fixed font sizes, which suits the AR texture but not the

@@ -1,7 +1,8 @@
 import Foundation
 
-// Decodable mirror of the GTFS-Realtime `FeedMessage` (TripUpdates only), as served
-// by the NTA's GTFS-R API with `?format=json`.
+// Mirror of the GTFS-Realtime `FeedMessage` (TripUpdates only). The app reads the NTA's
+// GTFS-R API as protobuf (see GTFSRealtimeProtobuf.swift); the JSON decoding here reads the
+// same feed with `?format=json`, which is easier to write by hand for tests.
 //
 // The decoder normalises keys (drops `_`, lowercases), so both the snake_case and
 // the protobuf-JSON lowerCamelCase spellings decode. Integers and enums are
@@ -125,6 +126,8 @@ enum StopRelationship: Sendable, Equatable, Decodable {
 /// An integer that may be encoded as a JSON number or a string (protobuf JSON encodes 64-bit ints as strings).
 struct FlexibleInt: Decodable, Sendable, Equatable, ExpressibleByIntegerLiteral {
     let value: Int
+
+    init(_ value: Int) { self.value = value }
 
     init(integerLiteral value: Int) { self.value = value }
 

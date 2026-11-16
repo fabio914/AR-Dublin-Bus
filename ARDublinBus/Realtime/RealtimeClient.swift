@@ -59,9 +59,9 @@ enum RealtimeError: LocalizedError, Equatable {
 ///
 /// The feed covers the whole network, so a single cached copy is shared by every
 /// stop and refetched at most once per `minimumInterval` to respect the NTA's
-/// fair-usage policy.
+/// fair-usage policy. It's fetched as protobuf, about a sixth of the size of the JSON.
 actor RealtimeClient {
-    static let endpoint = URL(string: "https://api.nationaltransport.ie/gtfsr/v2/TripUpdates?format=json")!
+    static let endpoint = URL(string: "https://api.nationaltransport.ie/gtfsr/v2/TripUpdates?format=protobuf")!
 
     private let session: URLSession
     private let apiKey: @Sendable () -> String?
@@ -127,7 +127,7 @@ actor RealtimeClient {
     private static func fetch(session: URLSession, apiKey: String, now: Date) async throws -> RealtimeSnapshot {
         var request = URLRequest(url: endpoint)
         request.setValue(apiKey, forHTTPHeaderField: "x-api-key")
-        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.setValue("application/x-protobuf", forHTTPHeaderField: "Accept")
         request.cachePolicy = .reloadIgnoringLocalCacheData
         request.timeoutInterval = 30
 
@@ -142,7 +142,7 @@ actor RealtimeClient {
         }
 
         return try await Task.detached(priority: .userInitiated) {
-            RealtimeSnapshot(feed: try GTFSRFeedMessage.decode(from: data), fetchedAt: now)
+            RealtimeSnapshot(feed: try GTFSRFeedMessage.decode(protobuf: data), fetchedAt: now)
         }.value
     }
 }

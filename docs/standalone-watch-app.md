@@ -19,7 +19,7 @@ access all work on watchOS. The problem is data volume:
 | --- | --- | --- |
 | Dublin Bus static GTFS (`GTFS_Dublin_Bus.zip`) | ~42 MB download | Published by the NTA, refreshed every few days. |
 | Unzipped files the app needs | ~210 MB | `stop_times.txt` alone is ~206 MB. |
-| NTA GTFS-Realtime TripUpdates (JSON) | ~4.4 MB per fetch | Whole network (about 2,400 trips); the API has no per-stop filter. |
+| NTA GTFS-Realtime TripUpdates | ~0.55 MB per fetch as protobuf (~3–4.4 MB as JSON) | Whole network; the API has no per-stop filter. The app fetches protobuf. |
 
 Also:
 
@@ -43,7 +43,7 @@ Compile the existing timetable, realtime and departure code (`GTFS/`, `Realtime/
 
 **Cons**
 - A 42 MB download and ~210 MB on disk on the watch, slow on first launch.
-- Every refresh downloads ~4.4 MB of realtime data, which is costly on battery and cellular.
+- Every refresh downloads ~0.55 MB of realtime data (protobuf), which still adds up on battery and cellular.
 - Loading `trips.txt` (~80k trips) into memory is borderline on older watches.
 - The NTA key has to be built into the watch app.
 
@@ -81,7 +81,7 @@ The NTA key would be sent from the iPhone to the watch (for example with
 
 **Cons**
 - The most new code: extract format, sync, versioning, and two data paths on the watch.
-- Live data without the iPhone still costs ~4.4 MB per fetch.
+- Live data without the iPhone still costs ~0.55 MB per fetch.
 - The extract only covers whatever scope was chosen, and could be stale if the iPhone hasn't
   refreshed the timetable recently.
 
@@ -118,7 +118,7 @@ iPhone app, call it directly.
 | Works without iPhone | Yes | Yes | Yes |
 | Needs a server | No | No | Yes |
 | Watch download, first use | ~42 MB | A few MB (from iPhone) | None |
-| Watch data per refresh, no iPhone | ~4.4 MB | ~4.4 MB | A few KB |
+| Watch data per refresh, no iPhone | ~0.55 MB | ~0.55 MB | A few KB |
 | Watch storage | ~210 MB | A few MB | Negligible |
 | Implementation effort | Low–medium | High | Medium (plus hosting) |
 | Ongoing maintenance | Low | Medium | Medium–high |
@@ -137,5 +137,7 @@ iPhone app, call it directly.
   Measured since: the whole of Dublin is about 15 MB (4–5 MB zipped), so all of it fits.
 - Should realtime fetches without the iPhone be allowed over cellular, or Wi-Fi only?
 - For Option 3: hosting platform, and whether the iPhone app should also switch to the server.
-- Does the NTA offer the realtime feed in protobuf (smaller than JSON), and how much smaller
-  is it? That would reduce the cost of Options 1 and 2.
+  See [A backend for live times and the timetable](backend.md).
+- ~~Does the NTA offer the realtime feed in protobuf, and how much smaller is it?~~ Answered
+  and implemented: yes, `?format=protobuf` is about a sixth of the JSON (0.55 MB against
+  3.2 MB, measured 16 November 2026), and the app now uses it.

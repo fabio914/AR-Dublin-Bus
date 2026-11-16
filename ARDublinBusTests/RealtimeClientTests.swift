@@ -4,7 +4,10 @@ import Testing
 
 @Suite(.serialized)
 struct RealtimeClientTests {
-    static let feed = Data(#"{"header":{"timestamp":"1700000000"},"entity":[]}"#.utf8)
+    /// An empty feed, as protobuf like the real endpoint.
+    static let feed = ProtobufWriter.build { feed in
+        feed.message(1) { header in header.varint(3, 1_700_000_000) }
+    }
     let start = Date.dublin(2026, 11, 16, 8, 0)
 
     private func makeClient() -> RealtimeClient {

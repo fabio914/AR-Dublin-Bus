@@ -110,7 +110,7 @@ after "Stop" (or the Irish "Stad") is accepted, so route numbers aren't mistaken
   launch and refreshed every 3 days. `TimetableDatabaseBuilder` converts its ~260 MB of CSV files
   into a SQLite database of about 15 MB, and the CSV files are then deleted. See
   [The timetable database](#the-timetable-database).
-- **Live data:** the NTA GTFS-Realtime API (`/gtfsr/v2/TripUpdates?format=json`). Delays are
+- **Live data:** the NTA GTFS-Realtime API (`/gtfsr/v2/TripUpdates?format=protobuf`). Delays are
   applied following GTFS-Realtime rules: an exact stop match first, otherwise the delay is
   carried forward from an earlier stop. Cancelled trips and skipped stops are marked, buses that
   have already passed are dropped, and added trips are included. The network-wide feed is
@@ -204,6 +204,7 @@ Some extra checks run against real data when these environment variables are set
 | --- | --- |
 | `TEST_RUNNER_GTFS_DIR` | An extracted Dublin Bus GTFS folder. The tests build the database from it and compare it with `stop_times.txt`. |
 | `TEST_RUNNER_REALTIME_JSON` | A saved `TripUpdates?format=json` response. |
+| `TEST_RUNNER_REALTIME_PROTOBUF` | The same feed saved as `TripUpdates?format=protobuf`, fetched within seconds of the JSON. The tests check that both decode to the same updates. |
 | `TEST_RUNNER_SIGN_PHOTO` | An upright photo of a stop flag. |
 | `TEST_RUNNER_SIGN_QUAD` | Corners of the "Stop …" line in that photo, in pixels: `tlx,tly,trx,try,brx,bry,blx,bly`. |
 | `TEST_RUNNER_SIGN_STOP` | The stop number on the photo. |
@@ -221,6 +222,8 @@ Some extra checks run against real data when these environment variables are set
   without the iPhone nearby.
 - [Apple Vision Pro app](docs/vision-pro-app.md): what's possible on visionOS, where camera
   frames are restricted.
+- [A backend for live times and the timetable](docs/backend.md): fetch the NTA feed once and
+  serve each stop's live times, and build the timetable database once for every app.
 
 ## Data
 
