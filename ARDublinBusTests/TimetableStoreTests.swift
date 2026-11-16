@@ -103,6 +103,7 @@ struct TimetableStoreTests {
         let refreshed = try await store.refresh()
         #expect(refreshed.stopsByCode["271"] != nil)
         #expect(try refreshed.calls(atStopIDs: [GTFSFixture.stopID]).isEmpty == false)
+        #expect(try FileManager.default.contentsOfDirectory(atPath: directory.path).sorted() == installed)
     }
 
     @Test func unchangedFeedIsNotDownloadedAgain() async throws {

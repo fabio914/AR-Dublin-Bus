@@ -41,7 +41,7 @@ Each fix is one commit on the `review-fixes` branch.
 - [x] **13. Route badges run a join per stop.** Store each stop's routes in a `stop_routes`
   table when the database is built (schema version 2; also drops the unused
   `trips.direction` column).
-- [ ] **14. Timetable swap isn't atomic, and refreshes can overlap.** Replace the folder in
+- [x] **14. Timetable swap isn't atomic, and refreshes can overlap.** Replace the folder in
   one step, and make a manual refresh wait for a background one.
 
 ## Housekeeping
@@ -66,5 +66,10 @@ Not done on this branch:
   `@unchecked Sendable` and `assumeIsolated` uses, towards Swift 6 mode.
 - **Dynamic Type.** The boards use fixed font sizes, which suits the AR texture but not the
   same views in sheets.
+- **Queries racing a timetable swap.** A `StaticTimetable` opened before a refresh fails with
+  a disk I/O error once its database file has been replaced (found while fixing item 14; the
+  original code behaved the same). The store hands out the new one straight away, so at most
+  one board load fails and the next refresh recovers. Retrying once with the current
+  timetable would hide it.
 - **Tests for `ProgressDownloader` and the watch connection**, which need network or
   WatchConnectivity stubs.

@@ -26,6 +26,8 @@ actor TimetableStore {
     private let session: URLSession
     private var timetable: StaticTimetable?
     private var loadTask: Task<StaticTimetable, Error>?
+    /// The refresh of a stale timetable, running behind the copy in use.
+    private var backgroundRefresh: Task<Void, Never>?
     private var phaseHandler: (@Sendable (TimetablePhase) -> Void)?
 
     init(
@@ -83,6 +85,8 @@ actor TimetableStore {
     /// Downloads a fresh copy of the feed and swaps it in.
     func refresh() async throws -> StaticTimetable {
         if let loadTask { _ = try? await loadTask.value }
+        // Two builds mustn't install over each other.
+        await backgroundRefresh?.value
         let task = Task { try await self.load(forceDownload: true) }
         loadTask = task
         defer { loadTask = nil }
@@ -122,7 +126,7 @@ actor TimetableStore {
         // Keep using the cached copy, but look for a newer one in the background when stale.
         if !downloaded, let downloadedAt,
            Date.now.timeIntervalSince(max(downloadedAt, date(at: checkedURL) ?? .distantPast)) > maximumAge {
-            Task { await self.refreshInBackground() }
+            backgroundRefresh = Task { await self.refreshInBackground() }
         }
         return timetable
     }
@@ -137,6 +141,7 @@ actor TimetableStore {
     /// Fetches a newer feed, if the server has one, while the current one stays in use. If that
     /// fails (offline, say), the current timetable is kept and the phase goes back to `.ready`.
     private func refreshInBackground() async {
+        defer { backgroundRefresh = nil }
         if await feedIsUnchanged() {
             // Nothing to download: check again in `maximumAge`.
             try? ISO8601DateFormatter().string(from: .now).write(to: checkedURL, atomically: true, encoding: .utf8)
@@ -240,14 +245,16 @@ actor TimetableStore {
         }
     }
 
-    /// Swaps the staging folder into place.
+    /// Swaps the staging folder into place. An existing timetable is replaced in one step, so
+    /// an interruption leaves either the old one or the new one, never neither.
     private static func install(_ staging: URL, at directory: URL) throws {
         let fileManager = FileManager.default
         if fileManager.fileExists(atPath: directory.path) {
-            try fileManager.removeItem(at: directory)
+            _ = try fileManager.replaceItemAt(directory, withItemAt: staging)
+        } else {
+            try fileManager.createDirectory(at: directory.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try fileManager.moveItem(at: staging, to: directory)
         }
-        try fileManager.createDirectory(at: directory.deletingLastPathComponent(), withIntermediateDirectories: true)
-        try fileManager.moveItem(at: staging, to: directory)
 
         var values = URLResourceValues()
         values.isExcludedFromBackup = true
