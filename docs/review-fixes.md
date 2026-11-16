@@ -17,7 +17,7 @@ Each fix is one commit on the `review-fixes` branch.
   prepared, about 260 MB of CSV files stay in Application Support (and in backups) forever.
 - [x] **5. Watch shows departed buses and hides failures.** Past departures stay at "Due",
   and a failed refresh is invisible while an older answer is on screen.
-- [ ] **6. Duplicate departure IDs on loop routes.** A trip calling twice at the same stop
+- [x] **6. Duplicate departure IDs on loop routes.** A trip calling twice at the same stop
   produces two rows with the same ID.
 - [ ] **7. Build number setting is ignored.** `CURRENT_PROJECT_VERSION` and
   `MARKETING_VERSION` in `project.yml` don't reach the Info.plists.

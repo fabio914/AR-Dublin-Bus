@@ -47,6 +47,27 @@ struct DepartureCalculatorTests {
         #expect(result.map(\.id) == ["C1@20261116"])
     }
 
+    @Test func loopRouteCallingTwiceGetsDistinctIDs() throws {
+        let fixture = try GTFSFixture(
+            trips: """
+            route_id,service_id,trip_id,trip_headsign,direction_id,shape_id
+            r27,WK,L1,City loop,0
+            """,
+            stopTimes: """
+            trip_id,arrival_time,departure_time,stop_id,stop_sequence
+            L1,08:05:00,08:05:00,8220DB000271,1
+            L1,08:20:00,08:20:00,8220DB000115,2
+            L1,08:40:00,08:40:00,8220DB000271,3
+            L1,08:55:00,08:55:00,8220DB000115,4
+            """
+        )
+        let timetable = try fixture.load()
+        let result = calculator.departures(calls: try timetable.calls(atStopIDs: stopIDs), stopIDs: stopIDs,
+                                           timetable: timetable, realtime: nil, now: .dublin(2026, 11, 16, 8, 0))
+        #expect(result.map(\.id) == ["L1@20261116", "L1@20261116#3"])
+        #expect(result.map(\.trip?.stopSequence) == [1, 3])
+    }
+
     @Test func scheduledOnlyWithoutRealtime() {
         // Monday 08:00.
         let result = departures(at: .dublin(2026, 11, 16, 8, 0))

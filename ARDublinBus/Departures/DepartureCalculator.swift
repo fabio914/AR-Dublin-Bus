@@ -1,6 +1,8 @@
 import Foundation
 
 struct Departure: Identifiable, Hashable, Sendable {
+    /// `trip@serviceDate`, shared by the same bus at other stops. A bus that calls here more
+    /// than once (a loop route) gets `#stopSequence` added from its second call on.
     let id: String
     let route: String
     let destination: String
@@ -94,7 +96,20 @@ struct DepartureCalculator {
 
         results += addedDepartures(stopIDs: stopIDs, timetable: timetable, realtime: realtime, earliest: earliest, latest: latest)
 
-        return Array(results.sorted { $0.expected < $1.expected }.prefix(limit))
+        return Array(Self.withUniqueIDs(results.sorted { $0.expected < $1.expected }).prefix(limit))
+    }
+
+    /// Lists need one ID per row, but a loop route can call at the same stop twice in one trip.
+    private static func withUniqueIDs(_ departures: [Departure]) -> [Departure] {
+        var seen: Set<String> = []
+        return departures.map { departure in
+            guard !seen.insert(departure.id).inserted else { return departure }
+            let id = "\(departure.id)#\(departure.trip.map { String($0.stopSequence) } ?? UUID().uuidString)"
+            seen.insert(id)
+            return Departure(id: id, route: departure.route, destination: departure.destination,
+                             scheduled: departure.scheduled, expected: departure.expected,
+                             isRealtime: departure.isRealtime, isCancelled: departure.isCancelled, trip: departure.trip)
+        }
     }
 
     /// Applies GTFS-Realtime semantics to one scheduled call: use the update for this
