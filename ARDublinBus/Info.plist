@@ -24,8 +24,6 @@
 	<string>The camera is used to find Dublin bus stop signs and read their stop numbers.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>Your location is used to find the bus stops nearest to you.</string>
-	<key>NTAAPIKey</key>
-	<string>$(NTA_API_KEY)</string>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
 	<key>UILaunchScreen</key>

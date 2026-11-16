@@ -25,6 +25,32 @@ targets:
     sources:
       - ARDublinBus
       - Shared
+      # Written by the script below on every build; git-ignored.
+      - path: Generated/BuildSecrets.swift
+        optional: true
+    preBuildScripts:
+      # Compiles NTA_API_KEY (Config/Secrets.xcconfig) into the app as scrambled bytes, rather
+      # than leaving it readable in Info.plist. APIKeyStore turns the bytes back into the key.
+      - name: Generate BuildSecrets.swift
+        basedOnDependencyAnalysis: false
+        outputFiles:
+          - $(SRCROOT)/Generated/BuildSecrets.swift
+        script: |
+          set -eu
+          output="${SRCROOT}/Generated/BuildSecrets.swift"
+          mkdir -p "${SRCROOT}/Generated"
+          key=$(printf '%s' "${NTA_API_KEY:-}" | tr -d '[:space:]')
+          # Each byte is shifted by a position-dependent amount (see BuildSecretCoding).
+          bytes=$(printf '%s' "$key" | od -An -v -tu1 | awk '
+            { for (i = 1; i <= NF; i++) { printf "%s%d", (n ? ", " : ""), ($i + (n * 37 + 91)) % 256; n++ } }')
+          {
+            echo "// Generated from NTA_API_KEY by a build script (see project.yml). Don't edit or commit."
+            echo "enum BuildSecrets {"
+            echo "    static let scrambledNTAAPIKey: [UInt8] = [${bytes}]"
+            echo "}"
+          } > "${output}.new"
+          # Only touch the file when the key changed, so builds stay incremental.
+          if cmp -s "${output}.new" "${output}"; then rm "${output}.new"; else mv "${output}.new" "${output}"; fi
     dependencies:
       - package: ZIPFoundation
       - target: ARDublinBusWatch
@@ -40,7 +66,6 @@ targets:
         UILaunchScreen: {}
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
         UIApplicationSupportsIndirectInputEvents: true
-        NTAAPIKey: $(NTA_API_KEY)
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: $(APP_BUNDLE_IDENTIFIER)

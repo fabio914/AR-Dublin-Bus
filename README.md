@@ -184,6 +184,7 @@ answer so the app opens with something to show.
 | `Shared` | Code used by both apps: location and watch messages. |
 | `ARDublinBusTests` | Unit tests. |
 | `Config` | Build settings; `Secrets.xcconfig` holds your own values. |
+| `Generated` | Written at build time and git-ignored: your API key, compiled into the app in scrambled form. |
 | `docs` | Design notes and proposals. |
 
 ## Tests

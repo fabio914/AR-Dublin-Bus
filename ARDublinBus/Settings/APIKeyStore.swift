@@ -3,8 +3,8 @@ import Security
 
 /// Stores the NTA developer-portal API key in the Keychain.
 ///
-/// A key baked in at build time (`NTA_API_KEY` in `Config/Secrets.xcconfig`, exposed
-/// through the `NTAAPIKey` Info.plist entry) is used when none has been saved.
+/// A key baked in at build time (`NTA_API_KEY` in `Config/Secrets.xcconfig`, compiled in by
+/// the "Generate BuildSecrets.swift" build script) is used when none has been saved.
 final class APIKeyStore: @unchecked Sendable {
     static let shared = APIKeyStore()
 
@@ -24,11 +24,7 @@ final class APIKeyStore: @unchecked Sendable {
 
     var hasSavedKey: Bool { (readKeychain() ?? "").isEmpty == false }
 
-    static var bundledKey: String? {
-        guard let value = Bundle.main.object(forInfoDictionaryKey: "NTAAPIKey") as? String else { return nil }
-        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmed.isEmpty || trimmed.hasPrefix("$(") ? nil : trimmed
-    }
+    static let bundledKey: String? = BuildSecretCoding.decode(BuildSecrets.scrambledNTAAPIKey)
 
     /// Saves `key`, or deletes the saved key when `key` is empty.
     func save(_ key: String) {
@@ -63,5 +59,24 @@ final class APIKeyStore: @unchecked Sendable {
         guard SecItemCopyMatching(query as CFDictionary, &result) == errSecSuccess,
               let data = result as? Data else { return nil }
         return String(data: data, encoding: .utf8)
+    }
+}
+
+/// How the build script stores a secret in the binary: each byte shifted by an amount that
+/// depends on its position, so the value isn't readable as plain text in the app.
+/// This is obscurity, not security: anyone determined can still recover it.
+enum BuildSecretCoding {
+    private static func shift(at index: Int) -> UInt8 {
+        UInt8(truncatingIfNeeded: index &* 37 &+ 91)
+    }
+
+    static func encode(_ secret: String) -> [UInt8] {
+        secret.utf8.enumerated().map { $0.element &+ shift(at: $0.offset) }
+    }
+
+    /// The secret, or `nil` if there is none.
+    static func decode(_ scrambled: [UInt8]) -> String? {
+        guard !scrambled.isEmpty else { return nil }
+        return String(decoding: scrambled.enumerated().map { $0.element &- shift(at: $0.offset) }, as: UTF8.self)
     }
 }
