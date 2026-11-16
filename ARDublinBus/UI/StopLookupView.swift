@@ -6,6 +6,7 @@ struct StopLookupView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var input = ""
     @State private var stopCode: String?
+    @FocusState private var isInputFocused: Bool
 
     var body: some View {
         NavigationStack {
@@ -15,6 +16,7 @@ struct StopLookupView: View {
                         TextField("Stop number, e.g. 271", text: $input)
                             .keyboardType(.numberPad)
                             .textFieldStyle(.roundedBorder)
+                            .focused($isInputFocused)
                             .onSubmit(lookUp)
                         Button("Show", action: lookUp)
                             .buttonStyle(.borderedProminent)
@@ -38,10 +40,14 @@ struct StopLookupView: View {
             }
             .tripDestination()
         }
+        // Ready to type as soon as the sheet opens.
+        .onAppear { isInputFocused = true }
     }
 
     private func lookUp() {
         guard let code = StopNumberParser.normalize(input.trimmingCharacters(in: .whitespaces)) else { return }
         stopCode = code
+        // Hide the keyboard so the board is fully visible.
+        isInputFocused = false
     }
 }
