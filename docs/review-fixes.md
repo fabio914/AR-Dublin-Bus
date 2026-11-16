@@ -72,5 +72,9 @@ Not done on this branch:
   original code behaved the same). The store hands out the new one straight away, so at most
   one board load fails and the next refresh recovers. Retrying once with the current
   timetable would hide it.
+- **Launch crash on the iOS 18.0 Simulator.** Built with Xcode 27, the app dies at launch
+  there with a missing RealityKit symbol (`AnchorEntity(anchor:)`), although iOS 18 is the
+  deployment target. It runs on the iOS 27 Simulator. Probably a Simulator-only gap, but worth
+  one launch on a real iOS 18 device.
 - **Tests for `ProgressDownloader` and the watch connection**, which need network or
   WatchConnectivity stubs.
