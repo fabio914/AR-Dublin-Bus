@@ -11,7 +11,7 @@ struct ContentView: View {
     var body: some View {
         ZStack {
             if ARWorldTrackingConfiguration.isSupported {
-                BusStopARView(model: model)
+                BusStopARView(model: model, isPaused: coversCamera)
                     .ignoresSafeArea()
             } else {
                 unsupportedView
@@ -62,6 +62,12 @@ struct ContentView: View {
             if !ARWorldTrackingConfiguration.isSupported { model.trackingStatus = .unsupported }
             await model.start()
         }
+    }
+
+    /// A full-height sheet hides the camera view. (A stop's board opened from an AR label is
+    /// half-height, with the camera still visible behind it.)
+    private var coversCamera: Bool {
+        showingSettings || showingLookup || showingNearby || showingMap
     }
 
     private func toolbarButton(_ systemImage: String, label: String, action: @escaping () -> Void) -> some View {

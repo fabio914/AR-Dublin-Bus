@@ -30,6 +30,8 @@ final class ARCoordinator: NSObject, ARSessionDelegate {
     /// The compass or location can't be used (location access denied, say): the session is
     /// aligned with gravity only. Signs still work; nearby stops can't be placed.
     private var headingUnavailable = false
+    /// A sheet covers the camera view: the session, OCR and location updates are stopped.
+    private var isPaused = false
 
     /// Seconds between OCR attempts while the stop number is unknown.
     private let readInterval: TimeInterval = 0.35
@@ -72,7 +74,11 @@ final class ARCoordinator: NSObject, ARSessionDelegate {
         stopsController.onStatusChange = { [weak self] status in self?.model.arStopsStatus = status }
         stopsController.onGeoTrackingAvailable = { [weak self] in self?.switchToGeoTracking() }
         self.stopsController = stopsController
-        model.onShowsARStopsChange = { [weak stopsController] enabled in stopsController?.setEnabled(enabled) }
+        model.onShowsARStopsChange = { [weak self] enabled in
+            // While paused, the setting is applied when the session resumes.
+            guard let self, !self.isPaused else { return }
+            self.stopsController?.setEnabled(enabled)
+        }
         arView.addGestureRecognizer(UITapGestureRecognizer(target: self, action: #selector(handleTap(_:))))
 
         startSession()
@@ -141,6 +147,22 @@ final class ARCoordinator: NSObject, ARSessionDelegate {
         arView?.session.pause()
     }
 
+    /// Stops the camera, tracking and location updates while the AR view is covered, and
+    /// starts them again afterwards.
+    func setPaused(_ paused: Bool) {
+        guard paused != isPaused else { return }
+        isPaused = paused
+        if paused {
+            arView?.session.pause()
+            removeSign()
+            model.signLost()
+            stopsController?.setEnabled(false)
+        } else {
+            startSession()
+            stopsController?.setEnabled(model.showsARStops)
+        }
+    }
+
     // MARK: - ARSessionDelegate (delivered on the main queue)
 
     nonisolated func session(_ session: ARSession, didAdd anchors: [ARAnchor]) {
@@ -207,6 +229,7 @@ final class ARCoordinator: NSObject, ARSessionDelegate {
 
     nonisolated func sessionInterruptionEnded(_ session: ARSession) {
         MainActor.assumeIsolated {
+            guard !self.isPaused else { return }
             self.startSession()
         }
     }
