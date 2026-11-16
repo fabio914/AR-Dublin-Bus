@@ -4,115 +4,217 @@ import Foundation
 enum TimetableError: LocalizedError {
     case missingFile(String)
     case missingColumns(file: String)
+    case incompatibleDatabase
 
     var errorDescription: String? {
         switch self {
         case .missingFile(let name): "The timetable is missing \(name)."
         case .missingColumns(let file): "\(file) has an unexpected format."
+        case .incompatibleDatabase: "The timetable needs to be downloaded again."
         }
     }
 }
 
-/// The static GTFS schedule, held in memory except for `stop_times.txt`,
-/// which is too large to load and is searched on demand per stop.
-struct StaticTimetable: Sendable {
+/// The static GTFS schedule, read from the database built by `TimetableDatabaseBuilder`.
+///
+/// Stops, routes and the service calendar are small and kept in memory; trips, calls
+/// and shapes are queried on demand.
+final class StaticTimetable: @unchecked Sendable {
     let stopsByCode: [String: [GTFSStop]]
+    /// By GTFS `route_id`.
     let routes: [String: GTFSRoute]
-    let trips: [String: GTFSTrip]
     let services: ServiceCalendar
-    let stopTimesURL: URL
     /// Identifies the feed so caches can be invalidated when it changes.
     let version: String
 
-    static let requiredFiles = ["stops.txt", "routes.txt", "trips.txt", "stop_times.txt"]
-    static let optionalFiles = ["calendar.txt", "calendar_dates.txt", "feed_info.txt"]
+    private let stopsByRow: [Int: GTFSStop]
+    private let stopRowsByID: [String: Int]
+    private let database: SQLiteDatabase
+    /// SQLite connections must not be used from two threads at once.
+    private let lock = NSLock()
 
-    static func load(from directory: URL) throws -> StaticTimetable {
-        for file in requiredFiles where !FileManager.default.fileExists(atPath: directory.appendingPathComponent(file).path) {
-            throw TimetableError.missingFile(file)
-        }
-
-        // stops.txt
-        var stopsByCode: [String: [GTFSStop]] = [:]
-        try CSV.forEachRow(in: directory.appendingPathComponent("stops.txt")) { row in
-            guard let id = row.value("stop_id"), let code = row.value("stop_code") else { return }
-            let stop = GTFSStop(
-                id: id,
-                code: code,
-                name: row.value("stop_name") ?? "",
-                latitude: row.value("stop_lat").flatMap(Double.init),
-                longitude: row.value("stop_lon").flatMap(Double.init)
-            )
-            stopsByCode[code, default: []].append(stop)
-        }
-
-        // routes.txt
-        var routes: [String: GTFSRoute] = [:]
-        try CSV.forEachRow(in: directory.appendingPathComponent("routes.txt")) { row in
-            guard let id = row.value("route_id") else { return }
-            routes[id] = GTFSRoute(
-                id: id,
-                shortName: row.value("route_short_name") ?? row.value("route_long_name") ?? id,
-                longName: row.value("route_long_name") ?? ""
-            )
-        }
-
-        // trips.txt
-        var trips: [String: GTFSTrip] = [:]
-        trips.reserveCapacity(100_000)
-        try CSV.forEachRow(in: directory.appendingPathComponent("trips.txt")) { row in
-            guard let id = row.value("trip_id"),
-                  let routeID = row.value("route_id"),
-                  let serviceID = row.value("service_id") else { return }
-            trips[id] = GTFSTrip(id: id, routeID: routeID, serviceID: serviceID, headsign: row.value("trip_headsign") ?? "")
-        }
-
-        // calendar.txt / calendar_dates.txt
-        var services = ServiceCalendar()
-        let calendarURL = directory.appendingPathComponent("calendar.txt")
-        if FileManager.default.fileExists(atPath: calendarURL.path) {
-            let days = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
-            try CSV.forEachRow(in: calendarURL) { row in
-                guard let id = row.value("service_id"),
-                      let start = row.value("start_date").flatMap(GTFSDate.init(string:)),
-                      let end = row.value("end_date").flatMap(GTFSDate.init(string:)) else { return }
-                services.regular[id] = .init(weekdays: days.map { row.value($0) == "1" }, start: start, end: end)
-            }
-        }
-        let datesURL = directory.appendingPathComponent("calendar_dates.txt")
-        if FileManager.default.fileExists(atPath: datesURL.path) {
-            try CSV.forEachRow(in: datesURL) { row in
-                guard let id = row.value("service_id"),
-                      let date = row.value("date").flatMap(GTFSDate.init(string:)) else { return }
-                switch row.value("exception_type") {
-                case "1": services.added[date, default: []].insert(id)
-                case "2": services.removed[date, default: []].insert(id)
-                default: break
-                }
-            }
-        }
-
-        var version = "unknown"
-        let feedInfoURL = directory.appendingPathComponent("feed_info.txt")
-        if FileManager.default.fileExists(atPath: feedInfoURL.path) {
-            try CSV.forEachRow(in: feedInfoURL) { row in
-                version = row.value("feed_version") ?? version
-            }
-        }
-
-        return StaticTimetable(
-            stopsByCode: stopsByCode,
-            routes: routes,
-            trips: trips,
-            services: services,
-            stopTimesURL: directory.appendingPathComponent("stop_times.txt"),
-            version: version
-        )
+    /// Opens a database built by `TimetableDatabaseBuilder`.
+    static func open(databaseAt url: URL) throws -> StaticTimetable {
+        let database = try SQLiteDatabase(url: url, readOnly: true)
+        return try StaticTimetable(database: database)
     }
 
-    /// Every scheduled call at the given stops. Scans the (memory-mapped) `stop_times.txt`.
+    /// Builds the database from an extracted GTFS feed, then opens it.
+    static func build(fromGTFS directory: URL, databaseURL: URL) throws -> StaticTimetable {
+        try TimetableDatabaseBuilder.build(fromGTFS: directory, to: databaseURL)
+        return try open(databaseAt: databaseURL)
+    }
+
+    private init(database: SQLiteDatabase) throws {
+        self.database = database
+
+        var meta: [String: String] = [:]
+        let metaQuery = try database.prepare("SELECT key, value FROM meta")
+        while try metaQuery.step() { meta[metaQuery.string(0)] = metaQuery.string(1) }
+        guard meta["schema_version"] == String(TimetableDatabaseBuilder.schemaVersion) else {
+            throw TimetableError.incompatibleDatabase
+        }
+        version = meta["feed_version"] ?? "unknown"
+
+        var stopsByCode: [String: [GTFSStop]] = [:]
+        var stopsByRow: [Int: GTFSStop] = [:]
+        var stopRowsByID: [String: Int] = [:]
+        let stops = try database.prepare("SELECT id, stop_id, code, name, lat, lon FROM stops")
+        while try stops.step() {
+            let stop = GTFSStop(id: stops.string(1), code: stops.string(2), name: stops.string(3),
+                                latitude: stops.optionalDouble(4), longitude: stops.optionalDouble(5))
+            stopsByCode[stop.code, default: []].append(stop)
+            stopsByRow[stops.int(0)] = stop
+            stopRowsByID[stop.id] = stops.int(0)
+        }
+        self.stopsByCode = stopsByCode
+        self.stopsByRow = stopsByRow
+        self.stopRowsByID = stopRowsByID
+
+        var routes: [String: GTFSRoute] = [:]
+        let routeQuery = try database.prepare("SELECT route_id, short_name, long_name FROM routes")
+        while try routeQuery.step() {
+            let route = GTFSRoute(id: routeQuery.string(0), shortName: routeQuery.string(1), longName: routeQuery.string(2))
+            routes[route.id] = route
+        }
+        self.routes = routes
+
+        var services = ServiceCalendar()
+        let serviceQuery = try database.prepare("SELECT service_id, days, start_date, end_date FROM services WHERE days IS NOT NULL")
+        while try serviceQuery.step() {
+            let days = serviceQuery.int(1)
+            services.regular[serviceQuery.string(0)] = .init(
+                weekdays: (0..<7).map { days & (1 << $0) != 0 },
+                start: GTFSDate(intValue: serviceQuery.int(2)),
+                end: GTFSDate(intValue: serviceQuery.int(3))
+            )
+        }
+        let exceptions = try database.prepare("""
+            SELECT s.service_id, e.date, e.type FROM service_exceptions e JOIN services s ON s.id = e.service
+            """)
+        while try exceptions.step() {
+            let date = GTFSDate(intValue: exceptions.int(1))
+            switch exceptions.int(2) {
+            case 1: services.added[date, default: []].insert(exceptions.string(0))
+            case 2: services.removed[date, default: []].insert(exceptions.string(0))
+            default: break
+            }
+        }
+        self.services = services
+    }
+
+    private func withDatabase<T>(_ body: (SQLiteDatabase) throws -> T) rethrows -> T {
+        lock.lock()
+        defer { lock.unlock() }
+        return try body(database)
+    }
+
+    // MARK: Calls
+
+    /// Every scheduled call at the given stops (GTFS `stop_id`s).
     func calls(atStopIDs stopIDs: Set<String>) throws -> [StopCall] {
-        try Self.scanStopTimes(at: stopTimesURL, stopIDs: stopIDs)
+        let rows = stopIDs.compactMap { id in stopRowsByID[id].map { (id: id, row: $0) } }
+        guard !rows.isEmpty else { return [] }
+
+        return try withDatabase { database in
+            let query = try database.prepare("""
+                SELECT t.trip_id, t.start + ps.departure_offset - ps.dwell, t.start + ps.departure_offset, ps.sequence,
+                       r.route_id, s.service_id, h.text
+                FROM pattern_stops ps
+                JOIN trips t ON t.pattern = ps.pattern
+                JOIN routes r ON r.id = t.route
+                JOIN services s ON s.id = t.service
+                JOIN headsigns h ON h.id = t.headsign
+                WHERE ps.stop = ?
+                """)
+            var calls: [StopCall] = []
+            for (stopID, row) in rows {
+                query.bind(row, at: 1)
+                while try query.step() {
+                    calls.append(StopCall(
+                        tripID: query.string(0), stopID: stopID,
+                        arrival: query.int(1), departure: query.int(2), stopSequence: query.int(3),
+                        routeID: query.string(4), serviceID: query.string(5), headsign: query.string(6)
+                    ))
+                }
+                query.reset()
+            }
+            return calls
+        }
+    }
+
+    // MARK: Trips
+
+    /// A trip's stops in order and its shape, or `nil` if the trip isn't in the timetable.
+    func tripDetails(tripID: String) throws -> TripDetails? {
+        try withDatabase { database in
+            let query = try database.prepare("""
+                SELECT t.start, p.calls, sh.points, r.route_id, s.service_id, h.text
+                FROM trips t
+                JOIN routes r ON r.id = t.route
+                JOIN services s ON s.id = t.service
+                JOIN headsigns h ON h.id = t.headsign
+                LEFT JOIN patterns p ON p.id = t.pattern
+                LEFT JOIN shapes sh ON sh.id = t.shape
+                WHERE t.trip_id = ?
+                """)
+            query.bind(tripID, at: 1)
+            guard try query.step() else { return nil }
+
+            let start = query.optionalInt(0) ?? 0
+            let routeID = query.string(3)
+            let serviceID = query.string(4)
+            let headsign = query.string(5)
+
+            // Each call is four integers: sequence, stop row, departure offset, dwell.
+            let values = ShapeCoding.decodeIntegers(query.data(1))
+            var calls: [TripDetails.Call] = []
+            var index = 0
+            while index + 3 < values.count {
+                let (sequence, stopRow, offset, dwell) = (values[index], values[index + 1], values[index + 2], values[index + 3])
+                index += 4
+                guard let stop = stopsByRow[stopRow] else { continue }
+                calls.append(.init(stop: stop, call: StopCall(
+                    tripID: tripID, stopID: stop.id,
+                    arrival: start + offset - dwell, departure: start + offset, stopSequence: sequence,
+                    routeID: routeID, serviceID: serviceID, headsign: headsign
+                )))
+            }
+
+            return TripDetails(
+                tripID: tripID,
+                route: routes[routeID] ?? GTFSRoute(id: routeID, shortName: routeID, longName: ""),
+                headsign: headsign,
+                serviceID: serviceID,
+                calls: calls,
+                shape: ShapeCoding.decode(query.data(2))
+            )
+        }
+    }
+
+    // MARK: Stops
+
+    /// Stops inside `bounds`, using the R-tree index. `isTruncated` is true when more
+    /// than `limit` stops are inside.
+    func stops(in bounds: CoordinateBounds, limit: Int) throws -> (stops: [GTFSStop], isTruncated: Bool) {
+        try withDatabase { database in
+            let query = try database.prepare("""
+                SELECT id FROM stops_index
+                WHERE min_lat <= ? AND max_lat >= ? AND min_lon <= ? AND max_lon >= ?
+                LIMIT ?
+                """)
+            query.bind(bounds.maxLatitude, at: 1)
+            query.bind(bounds.minLatitude, at: 2)
+            query.bind(bounds.maxLongitude, at: 3)
+            query.bind(bounds.minLongitude, at: 4)
+            query.bind(limit + 1, at: 5)
+            var stops: [GTFSStop] = []
+            while try query.step() {
+                if let stop = stopsByRow[query.int(0)] { stops.append(stop) }
+            }
+            let isTruncated = stops.count > limit
+            return (Array(stops.prefix(limit)), isTruncated)
+        }
     }
 
     /// Stops within `radius` metres of `coordinate`, nearest first, one entry per stop code.
@@ -130,141 +232,11 @@ struct StaticTimetable: Sendable {
         let close = all.prefix { $0.distance <= radius }
         return Array(close.isEmpty ? all.prefix(fallbackCount) : close.prefix(limit))
     }
+}
 
-    enum ScanStrategy {
-        /// Search the raw bytes for each stop ID (fast for one or two stops).
-        case perStop
-        /// Read every line once, checking its `stop_id` (fast for many stops).
-        case singlePass
-        case automatic
-    }
-
-    /// Finds the rows of a GTFS `stop_times.txt` that belong to `stopIDs` without
-    /// parsing the whole (~200 MB) file: only lines that belong to one of the
-    /// stops are parsed.
-    static func scanStopTimes(at url: URL, stopIDs: Set<String>, strategy: ScanStrategy = .automatic) throws -> [StopCall] {
-        let stopIDs = stopIDs.filter { !$0.isEmpty }
-        guard !stopIDs.isEmpty else { return [] }
-
-        let data = try Data(contentsOf: url, options: .alwaysMapped)
-        return try data.withUnsafeBytes { (buffer: UnsafeRawBufferPointer) -> [StopCall] in
-            guard let base = buffer.baseAddress, buffer.count > 0 else { return [] }
-            let bytes = base.assumingMemoryBound(to: UInt8.self)
-            let count = buffer.count
-            let newline = UInt8(ascii: "\n")
-
-            func lineEnd(from offset: Int) -> Int {
-                guard offset < count, let found = memchr(base + offset, Int32(newline), count - offset) else { return count }
-                return base.distance(to: UnsafeRawPointer(found))
-            }
-
-            func line(_ start: Int, _ end: Int) -> String {
-                String(decoding: UnsafeBufferPointer(start: bytes + start, count: end - start), as: UTF8.self)
-            }
-
-            let headerEnd = lineEnd(from: 0)
-            let columns = CSV.columnIndex(for: CSV.parseLine(line(0, headerEnd)))
-            guard let tripColumn = columns["trip_id"],
-                  let arrivalColumn = columns["arrival_time"],
-                  let departureColumn = columns["departure_time"],
-                  let stopColumn = columns["stop_id"],
-                  let sequenceColumn = columns["stop_sequence"] else {
-                throw TimetableError.missingColumns(file: "stop_times.txt")
-            }
-            let maxColumn = max(tripColumn, arrivalColumn, departureColumn, stopColumn, sequenceColumn)
-
-            var calls: [StopCall] = []
-
-            /// Parses one line and keeps it if it belongs to `expectedStopID` (or any of `stopIDs`).
-            func appendCall(lineStart start: Int, end: Int, expectedStopID: String? = nil) {
-                let fields = CSV.parseLine(line(start, end))
-                guard fields.count > maxColumn else { return }
-                let stopID = fields[stopColumn].trimmingCharacters(in: .whitespaces)
-                guard expectedStopID.map({ $0 == stopID }) ?? stopIDs.contains(stopID),
-                      let sequence = Int(fields[sequenceColumn].trimmingCharacters(in: .whitespaces)) else { return }
-
-                let arrival = GTFSTime.seconds(from: fields[arrivalColumn])
-                let departure = GTFSTime.seconds(from: fields[departureColumn])
-                guard let arrivalOrDeparture = arrival ?? departure else { return }
-
-                calls.append(StopCall(
-                    tripID: fields[tripColumn],
-                    stopID: stopID,
-                    arrival: arrivalOrDeparture,
-                    departure: departure ?? arrivalOrDeparture,
-                    stopSequence: sequence
-                ))
-            }
-
-            let useSinglePass = switch strategy {
-            case .perStop: false
-            case .singlePass: true
-            case .automatic: stopIDs.count > 2
-            }
-
-            if useSinglePass {
-                // Hash each line's stop_id bytes and only parse lines whose hash matches a wanted stop.
-                let wantedHashes = Set(stopIDs.map { Self.fnv1a(Array($0.utf8)) })
-                let comma = UInt8(ascii: ","), quote = UInt8(ascii: "\""), space = UInt8(ascii: " "), cr = UInt8(ascii: "\r")
-                var start = headerEnd + 1
-
-                while start < count {
-                    let end = lineEnd(from: start)
-                    defer { start = end + 1 }
-
-                    // Locate the stop_id field by counting commas.
-                    var index = start, field = 0, fieldStart = start, sawQuote = false
-                    while index < end, field < stopColumn {
-                        let byte = bytes[index]
-                        if byte == comma { field += 1; fieldStart = index + 1 }
-                        else if byte == quote { sawQuote = true }
-                        index += 1
-                    }
-                    if sawQuote {
-                        // Quoted fields may contain commas: fall back to a full parse.
-                        appendCall(lineStart: start, end: end)
-                        continue
-                    }
-                    guard field == stopColumn else { continue }
-
-                    var fieldEnd = fieldStart
-                    while fieldEnd < end, bytes[fieldEnd] != comma, bytes[fieldEnd] != cr { fieldEnd += 1 }
-                    var trimmedStart = fieldStart, trimmedEnd = fieldEnd
-                    while trimmedStart < trimmedEnd, bytes[trimmedStart] == space { trimmedStart += 1 }
-                    while trimmedEnd > trimmedStart, bytes[trimmedEnd - 1] == space { trimmedEnd -= 1 }
-
-                    let hash = Self.fnv1a(UnsafeBufferPointer(start: bytes + trimmedStart, count: trimmedEnd - trimmedStart))
-                    if wantedHashes.contains(hash) {
-                        appendCall(lineStart: start, end: end)
-                    }
-                }
-            } else {
-                for stopID in stopIDs {
-                    let needle = Array(stopID.utf8)
-                    var offset = headerEnd + 1
-
-                    while offset < count,
-                          let hit = needle.withUnsafeBytes({ memmem(base + offset, count - offset, $0.baseAddress, needle.count) }) {
-                        let hitOffset = base.distance(to: UnsafeRawPointer(hit))
-                        var start = hitOffset
-                        while start > 0, bytes[start - 1] != newline { start -= 1 }
-                        let end = lineEnd(from: hitOffset + needle.count)
-                        offset = end + 1
-                        appendCall(lineStart: start, end: end, expectedStopID: stopID)
-                    }
-                }
-            }
-            return calls
-        }
-    }
-
-    /// 64-bit FNV-1a hash.
-    private static func fnv1a<C: Collection>(_ bytes: C) -> UInt64 where C.Element == UInt8 {
-        var hash: UInt64 = 0xcbf2_9ce4_8422_2325
-        for byte in bytes {
-            hash ^= UInt64(byte)
-            hash &*= 0x0000_0100_0000_01b3
-        }
-        return hash
+extension GTFSDate {
+    /// From `YYYYMMDD` as an integer.
+    init(intValue: Int) {
+        self.init(year: intValue / 10_000, month: (intValue / 100) % 100, day: intValue % 100)
     }
 }

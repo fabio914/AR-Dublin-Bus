@@ -118,9 +118,11 @@ struct NearbyStopsView: View {
                     StopBoardView(stopCode: stop.stop.code)
                         .padding()
                 }
+                .background(Color(.systemGroupedBackground))
                 .navigationTitle("Stop \(stop.stop.code)")
                 .navigationBarTitleDisplayMode(.inline)
             }
+            .tripDestination()
         }
         .task(id: runID) {
             let model = self.model ?? NearbyStopsModel(service: appModel.service)
@@ -226,7 +228,15 @@ private struct NearbyStopCard: View {
                 }
                 ForEach(Array(next.enumerated()), id: \.element.id) { index, departure in
                     if index > 0 { PanelSeparator() }
-                    DepartureRow(departure: departure, now: .now)
+                    if let trip = departure.trip {
+                        NavigationLink(value: trip) {
+                            DepartureRow(departure: departure, now: .now, showsChevron: true)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                    } else {
+                        DepartureRow(departure: departure, now: .now)
+                    }
                 }
             } else {
                 ProgressView()
@@ -267,13 +277,20 @@ private struct NearbyDeparturesCard: View {
             }
             ForEach(Array(model.departures.enumerated()), id: \.element.id) { index, item in
                 if index > 0 { PanelSeparator() }
-                NavigationLink(value: item.stop) {
-                    DepartureRow(
-                        departure: item.departure,
-                        now: .now,
-                        detail: "\(NearbyStopsView.distance(item.stop.distance)) · Stop \(item.stop.stop.code) · \(item.stop.stop.name)"
-                    )
-                    .contentShape(Rectangle())
+                let row = DepartureRow(
+                    departure: item.departure,
+                    now: .now,
+                    detail: "\(NearbyStopsView.distance(item.stop.distance)) · Stop \(item.stop.stop.code) · \(item.stop.stop.name)",
+                    showsChevron: true
+                )
+                .contentShape(Rectangle())
+                // Opens the bus's line; buses added by the live feed have none, so open their stop.
+                Group {
+                    if let trip = item.departure.trip {
+                        NavigationLink(value: trip) { row }
+                    } else {
+                        NavigationLink(value: item.stop) { row }
+                    }
                 }
                 .buttonStyle(.plain)
             }

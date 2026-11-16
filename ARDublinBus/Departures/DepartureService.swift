@@ -16,21 +16,21 @@ struct StopBoard: Equatable, Sendable {
 
 enum DepartureServiceError: LocalizedError, Equatable {
     case unknownStop(String)
+    case unknownTrip
 
     var errorDescription: String? {
         switch self {
         case .unknownStop(let code): "Stop \(code) isn't in the Dublin Bus timetable."
+        case .unknownTrip: "This bus isn't in the timetable any more."
         }
     }
 }
 
-/// Builds `StopBoard`s from the static timetable and the realtime feed.
+/// Builds boards, map stops and trip journeys from the timetable and the realtime feed.
 actor DepartureService {
     let timetableStore: TimetableStore
     let realtimeClient: RealtimeClient
     private let calculator: DepartureCalculator
-    private var callsCache: [String: [StopCall]] = [:]
-    private var cacheVersion: String?
 
     init(timetableStore: TimetableStore, realtimeClient: RealtimeClient, calculator: DepartureCalculator = .init()) {
         self.timetableStore = timetableStore
@@ -47,7 +47,7 @@ actor DepartureService {
         try await boards(forStopCodes: [code], now: now)[0]
     }
 
-    /// Boards for several stops, sharing one timetable scan and one realtime snapshot.
+    /// Boards for several stops, sharing one realtime snapshot.
     /// Results are in the order of `codes`.
     func boards(forStopCodes codes: [String], now: Date = .now) async throws -> [StopBoard] {
         let timetable = try await timetableStore.loadedTimetable()
@@ -59,14 +59,7 @@ actor DepartureService {
             stopsByCode[code] = stops
         }
         let callsByCode = try await calls(for: stopsByCode, timetable: timetable)
-
-        var realtime: RealtimeSnapshot?
-        var realtimeIssue: String?
-        do {
-            realtime = try await realtimeClient.snapshot(now: now)
-        } catch {
-            realtimeIssue = (error as? LocalizedError)?.errorDescription ?? "Live times are unavailable."
-        }
+        let (realtime, realtimeIssue) = await realtimeSnapshot(now: now)
 
         return codes.map { code in
             let stops = stopsByCode[code]!
@@ -95,31 +88,50 @@ actor DepartureService {
         try await timetableStore.loadedTimetable().stops(near: coordinate, within: radius, limit: limit)
     }
 
-    /// Calls per stop code, scanning `stop_times.txt` once for all codes not yet cached.
+    /// Stops inside a map area, at most `limit` of them.
+    func stops(in bounds: CoordinateBounds, limit: Int) async throws -> (stops: [GTFSStop], isTruncated: Bool) {
+        let timetable = try await timetableStore.loadedTimetable()
+        return try await Task.detached(priority: .userInitiated) {
+            try timetable.stops(in: bounds, limit: limit)
+        }.value
+    }
+
+    /// A trip's stops, shape and live times, for the line screen.
+    func journey(for reference: TripReference, now: Date = .now) async throws -> TripJourney {
+        let timetable = try await timetableStore.loadedTimetable()
+        let details = try await Task.detached(priority: .userInitiated) {
+            try timetable.tripDetails(tripID: reference.tripID)
+        }.value
+        guard let details else { throw DepartureServiceError.unknownTrip }
+        let (realtime, realtimeIssue) = await realtimeSnapshot(now: now)
+        return TripJourney.make(details: details, reference: reference, realtime: realtime,
+                                realtimeIssue: realtimeIssue, now: now)
+    }
+
+    private func realtimeSnapshot(now: Date) async -> (RealtimeSnapshot?, String?) {
+        do {
+            return (try await realtimeClient.snapshot(now: now), nil)
+        } catch {
+            return (nil, (error as? LocalizedError)?.errorDescription ?? "Live times are unavailable.")
+        }
+    }
+
+    /// Calls per stop code, from the timetable database.
     private func calls(for stopsByCode: [String: [GTFSStop]], timetable: StaticTimetable) async throws -> [String: [StopCall]] {
-        if cacheVersion != timetable.version {
-            callsCache.removeAll()
-            cacheVersion = timetable.version
+        var codeByStopID: [String: String] = [:]
+        for (code, stops) in stopsByCode {
+            for stop in stops { codeByStopID[stop.id] = code }
         }
+        let stopIDs = Set(codeByStopID.keys)
+        let calls = try await Task.detached(priority: .userInitiated) {
+            try timetable.calls(atStopIDs: stopIDs)
+        }.value
 
-        let missing = stopsByCode.filter { callsCache[$0.key] == nil }
-        if !missing.isEmpty {
-            var codeByStopID: [String: String] = [:]
-            for (code, stops) in missing {
-                for stop in stops { codeByStopID[stop.id] = code }
-            }
-            let stopIDs = Set(codeByStopID.keys)
-            let calls = try await Task.detached(priority: .userInitiated) {
-                try timetable.calls(atStopIDs: stopIDs)
-            }.value
-
-            var grouped = Dictionary(uniqueKeysWithValues: missing.keys.map { ($0, [StopCall]()) })
-            for call in calls {
-                if let code = codeByStopID[call.stopID] { grouped[code, default: []].append(call) }
-            }
-            callsCache.merge(grouped) { _, new in new }
+        var grouped = Dictionary(uniqueKeysWithValues: stopsByCode.keys.map { ($0, [StopCall]()) })
+        for call in calls {
+            if let code = codeByStopID[call.stopID] { grouped[code, default: []].append(call) }
         }
-        return stopsByCode.keys.reduce(into: [:]) { result, code in result[code] = callsCache[code] }
+        return grouped
     }
 }
 

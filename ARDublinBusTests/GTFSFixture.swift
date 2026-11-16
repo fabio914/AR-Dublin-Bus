@@ -11,7 +11,8 @@ struct GTFSFixture {
         trips: String = GTFSFixture.defaultTrips,
         stopTimes: String = GTFSFixture.defaultStopTimes,
         calendar: String = GTFSFixture.defaultCalendar,
-        calendarDates: String = GTFSFixture.defaultCalendarDates
+        calendarDates: String = GTFSFixture.defaultCalendarDates,
+        shapes: String? = GTFSFixture.defaultShapes
     ) throws {
         directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("gtfs-fixture-\(UUID().uuidString)", isDirectory: true)
@@ -28,10 +29,16 @@ struct GTFSFixture {
         for (name, contents) in files {
             try contents.write(to: directory.appendingPathComponent(name), atomically: true, encoding: .utf8)
         }
+        if let shapes {
+            try shapes.write(to: directory.appendingPathComponent("shapes.txt"), atomically: true, encoding: .utf8)
+        }
     }
 
+    var databaseURL: URL { directory.appendingPathComponent(TimetableStore.databaseFileName) }
+
+    /// Builds the timetable database next to the CSV files (where `TimetableStore` expects it) and opens it.
     func load() throws -> StaticTimetable {
-        try StaticTimetable.load(from: directory)
+        try StaticTimetable.build(fromGTFS: directory, databaseURL: databaseURL)
     }
 
     static let stopID = "8220DB000271"
@@ -51,9 +58,9 @@ struct GTFSFixture {
     """
 
     static let defaultTrips = """
-    route_id,service_id,trip_id,trip_headsign,direction_id
-    r27,WK,T1,Clare Hall,0
-    r27,WK,T2,Clare Hall,0
+    route_id,service_id,trip_id,trip_headsign,direction_id,shape_id
+    r27,WK,T1,Clare Hall,0,S1
+    r27,WK,T2,Clare Hall,0,S2
     r27,WK,T3,Clare Hall,0
     r44,WK,T4,Enniskerry,1
     r44,WK,T5,Enniskerry,1
@@ -91,6 +98,17 @@ struct GTFSFixture {
     service_id,date,exception_type
     WK,20261225,2
     WE,20261225,1
+    """
+
+    /// S1 and S2 have the same geometry (stored once); S2 lists its points out of order.
+    static let defaultShapes = """
+    shape_id,shape_pt_lat,shape_pt_lon,shape_pt_sequence,shape_dist_traveled
+    S1,53.38796,-6.26503,1,0
+    S1,53.36,-6.262,2,3100.5
+    S1,53.348596,-6.259485,3,4400.0
+    S2,53.348596,-6.259485,3,4400.0
+    S2,53.38796,-6.26503,1,0
+    S2,53.36,-6.262,2,3100.5
     """
 }
 

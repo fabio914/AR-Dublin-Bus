@@ -6,6 +6,7 @@ struct ContentView: View {
     @State private var showingSettings = false
     @State private var showingLookup = false
     @State private var showingNearby = false
+    @State private var showingMap = false
 
     var body: some View {
         ZStack {
@@ -21,6 +22,7 @@ struct ContentView: View {
                     StatusBadge(model: model)
                     Spacer()
                     toolbarButton("location.fill", label: "Stops near me") { showingNearby = true }
+                    toolbarButton("map.fill", label: "Map of bus stops") { showingMap = true }
                     toolbarButton("magnifyingglass", label: "Look up a stop") { showingLookup = true }
                     toolbarButton("gearshape.fill", label: "Settings") { showingSettings = true }
                 }
@@ -41,6 +43,9 @@ struct ContentView: View {
         }
         .sheet(isPresented: $showingNearby) {
             NearbyStopsView()
+        }
+        .sheet(isPresented: $showingMap) {
+            StopsMapView()
         }
         .task {
             if !ARWorldTrackingConfiguration.isSupported { model.trackingStatus = .unsupported }

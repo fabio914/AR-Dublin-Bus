@@ -16,6 +16,8 @@ struct DeparturesPanelView: View {
     let content: PanelContent
     let now: Date
     var maximumRows = 6
+    /// Rows open the bus's line when tapped (inside a `NavigationStack` using `tripDestination()`).
+    var linksToTrips = false
 
     static let width: CGFloat = 360
 
@@ -60,7 +62,15 @@ struct DeparturesPanelView: View {
             } else {
                 ForEach(Array(departures.enumerated()), id: \.element.id) { index, departure in
                     if index > 0 { PanelSeparator() }
-                    DepartureRow(departure: departure, now: now)
+                    if linksToTrips, let trip = departure.trip {
+                        NavigationLink(value: trip) {
+                            DepartureRow(departure: departure, now: now, showsChevron: true)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                    } else {
+                        DepartureRow(departure: departure, now: now)
+                    }
                 }
             }
             PanelFooter { RealtimeStatusLabel(issue: board.realtimeIssue, updatedAt: board.generatedAt) }
@@ -93,6 +103,8 @@ struct DepartureRow: View {
     let departure: Departure
     let now: Date
     var detail: String?
+    /// Shows that the row can be tapped.
+    var showsChevron = false
 
     var body: some View {
         HStack(spacing: 12) {
@@ -120,6 +132,12 @@ struct DepartureRow: View {
             .frame(maxWidth: .infinity, alignment: .leading)
 
             eta
+
+            if showsChevron {
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(TFIColors.secondaryInk.opacity(0.7))
+            }
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 9)

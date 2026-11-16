@@ -28,6 +28,7 @@ struct StopLookupView: View {
                 }
                 .padding()
             }
+            .background(Color(.systemGroupedBackground))
             .navigationTitle("Look up a stop")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -35,6 +36,7 @@ struct StopLookupView: View {
                     Button("Done") { dismiss() }
                 }
             }
+            .tripDestination()
         }
     }
 
