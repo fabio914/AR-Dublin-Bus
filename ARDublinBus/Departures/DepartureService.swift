@@ -96,6 +96,14 @@ actor DepartureService {
         }.value
     }
 
+    /// Stops matching a number or a name, for the Look up screen.
+    func searchStops(_ query: String, limit: Int = 30) async throws -> [StopSearchResult] {
+        let timetable = try await timetableStore.loadedTimetable()
+        return try await Task.detached(priority: .userInitiated) {
+            try timetable.searchStops(query, limit: limit)
+        }.value
+    }
+
     /// A trip's stops, shape and live times, for the line screen.
     func journey(for reference: TripReference, now: Date = .now) async throws -> TripJourney {
         let timetable = try await timetableStore.loadedTimetable()

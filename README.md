@@ -17,7 +17,9 @@ any stop by number, and includes an Apple Watch app.
   to face you and refreshes every 15 seconds.
 - **Nearby:** uses your location to list the stops within 600 m, nearest first, each with its
   next buses, plus a merged "Next buses" list across all of them.
-- **Look up:** shows the board for any stop number you type.
+- **Look up:** search by stop number or name. Matching stops are listed as you type, with the
+  routes that call at each. Names match regardless of case, accents and apostrophes, and the
+  abbreviations in stop names are understood ("oconnell street lower" finds "O'Connell St Lwr").
 - **Map:** every bus stop on a map, clustered when zoomed out. Tap a stop to see its board in a
   half-height sheet, with the map still usable behind it.
 - **Line view:** tap a bus on any board (Map, Nearby or Look up) to see its route on a map and

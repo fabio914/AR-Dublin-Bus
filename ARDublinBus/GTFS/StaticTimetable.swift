@@ -29,6 +29,7 @@ final class StaticTimetable: @unchecked Sendable {
 
     private let stopsByRow: [Int: GTFSStop]
     private let stopRowsByID: [String: Int]
+    private let searchIndex: StopSearchIndex
     private let database: SQLiteDatabase
     /// SQLite connections must not be used from two threads at once.
     private let lock = NSLock()
@@ -70,6 +71,7 @@ final class StaticTimetable: @unchecked Sendable {
         self.stopsByCode = stopsByCode
         self.stopsByRow = stopsByRow
         self.stopRowsByID = stopRowsByID
+        searchIndex = StopSearchIndex(stopsByCode: stopsByCode)
 
         var routes: [String: GTFSRoute] = [:]
         let routeQuery = try database.prepare("SELECT route_id, short_name, long_name FROM routes")
@@ -214,6 +216,29 @@ final class StaticTimetable: @unchecked Sendable {
             }
             let isTruncated = stops.count > limit
             return (Array(stops.prefix(limit)), isTruncated)
+        }
+    }
+
+    /// Stops whose number or name matches `query` (see `StopSearchIndex`), with their routes.
+    func searchStops(_ query: String, limit: Int) throws -> [StopSearchResult] {
+        let stops = searchIndex.search(query, limit: limit)
+        return try withDatabase { database in
+            let routeQuery = try database.prepare("""
+                SELECT DISTINCT r.short_name FROM pattern_stops ps
+                JOIN trips t ON t.pattern = ps.pattern
+                JOIN routes r ON r.id = t.route
+                WHERE ps.stop = ?
+                """)
+            return try stops.map { stop in
+                var routes: Set<String> = []
+                for row in (stopsByCode[stop.code] ?? [stop]).compactMap({ stopRowsByID[$0.id] }) {
+                    routeQuery.bind(row, at: 1)
+                    while try routeQuery.step() { routes.insert(routeQuery.string(0)) }
+                    routeQuery.reset()
+                }
+                let sorted = routes.sorted { $0.localizedStandardCompare($1) == .orderedAscending }
+                return StopSearchResult(stop: stop, routes: sorted)
+            }
         }
     }
 
