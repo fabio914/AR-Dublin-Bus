@@ -113,11 +113,24 @@ final class StaticTimetable: @unchecked Sendable {
 
     // MARK: Calls
 
-    /// Every scheduled call at the given stops (GTFS `stop_id`s), including calls where the
+    /// The scheduled calls at the given stops (GTFS `stop_id`s), including calls where the
     /// trip ends (`isLastStop`).
-    func calls(atStopIDs stopIDs: Set<String>) throws -> [StopCall] {
+    ///
+    /// - Parameter arrivalWindows: only calls arriving within one of these ranges (seconds after
+    ///   the start of the service day) are returned; `nil` returns every call.
+    func calls(atStopIDs stopIDs: Set<String>, arrivalWindows: [ClosedRange<Int>]? = nil) throws -> [StopCall] {
         let rows = stopIDs.compactMap { id in stopRowsByID[id].map { (id: id, row: $0) } }
         guard !rows.isEmpty else { return [] }
+
+        // Overlapping windows are merged, so no call is returned twice.
+        var windows: [ClosedRange<Int>] = []
+        for window in (arrivalWindows ?? [Int(Int32.min)...Int(Int32.max)]).sorted(by: { $0.lowerBound < $1.lowerBound }) {
+            if let last = windows.last, window.lowerBound <= last.upperBound {
+                windows[windows.count - 1] = last.lowerBound...max(last.upperBound, window.upperBound)
+            } else {
+                windows.append(window)
+            }
+        }
 
         return try withDatabase { database in
             let query = try database.prepare("""
@@ -128,20 +141,27 @@ final class StaticTimetable: @unchecked Sendable {
                 JOIN routes r ON r.id = t.route
                 JOIN services s ON s.id = t.service
                 JOIN headsigns h ON h.id = t.headsign
-                WHERE ps.stop = ?
+                WHERE ps.stop = ?1
+                  -- The arrival is within the window; written as a range of trip start times so
+                  -- the (pattern, start) index finds the trips.
+                  AND t.start BETWEEN ?2 - ps.departure_offset + ps.dwell AND ?3 - ps.departure_offset + ps.dwell
                 """)
             var calls: [StopCall] = []
             for (stopID, row) in rows {
-                query.bind(row, at: 1)
-                while try query.step() {
-                    calls.append(StopCall(
-                        tripID: query.string(0), stopID: stopID,
-                        arrival: query.int(1), departure: query.int(2), stopSequence: query.int(3),
-                        routeID: query.string(4), serviceID: query.string(5), headsign: query.string(6),
-                        isLastStop: query.int(7) != 0
-                    ))
+                for window in windows {
+                    query.bind(row, at: 1)
+                    query.bind(window.lowerBound, at: 2)
+                    query.bind(window.upperBound, at: 3)
+                    while try query.step() {
+                        calls.append(StopCall(
+                            tripID: query.string(0), stopID: stopID,
+                            arrival: query.int(1), departure: query.int(2), stopSequence: query.int(3),
+                            routeID: query.string(4), serviceID: query.string(5), headsign: query.string(6),
+                            isLastStop: query.int(7) != 0
+                        ))
+                    }
+                    query.reset()
                 }
-                query.reset()
             }
             return calls
         }

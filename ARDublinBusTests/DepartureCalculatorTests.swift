@@ -68,6 +68,25 @@ struct DepartureCalculatorTests {
         #expect(result.map(\.trip?.stopSequence) == [1, 3])
     }
 
+    @Test func windowedCallsGiveTheSameBoard() throws {
+        // Morning, a quiet afternoon, and just after midnight (N1 runs at 24:35 on Monday's service day).
+        let times: [Date] = [.dublin(2026, 11, 16, 6, 0), .dublin(2026, 11, 16, 8, 0), .dublin(2026, 11, 16, 9, 30),
+                             .dublin(2026, 11, 16, 15, 0), .dublin(2026, 11, 16, 23, 30), .dublin(2026, 11, 17, 0, 20)]
+        for now in times {
+            let windowed = try timetable.calls(atStopIDs: stopIDs, arrivalWindows: calculator.arrivalWindows(at: now))
+            let expected = departures(at: now)
+            let actual = calculator.departures(calls: windowed, stopIDs: stopIDs, timetable: timetable, realtime: nil, now: now)
+            #expect(actual == expected)
+            #expect(windowed.count <= calls.count)
+        }
+        // At 15:00 nothing at this stop is anywhere near due.
+        let afternoon = calculator.arrivalWindows(at: .dublin(2026, 11, 16, 15, 0))
+        #expect(try timetable.calls(atStopIDs: stopIDs, arrivalWindows: afternoon).isEmpty)
+        // Overlapping windows don't return a call twice.
+        let all = try timetable.calls(atStopIDs: stopIDs, arrivalWindows: [0...100_000, 50_000...200_000])
+        #expect(all.count == calls.count)
+    }
+
     @Test func scheduledOnlyWithoutRealtime() {
         // Monday 08:00.
         let result = departures(at: .dublin(2026, 11, 16, 8, 0))

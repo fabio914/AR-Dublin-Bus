@@ -63,7 +63,7 @@ actor DepartureService {
             }
             stopsByCode[code] = stops
         }
-        let callsByCode = try await calls(for: stopsByCode, timetable: timetable)
+        let callsByCode = try await calls(for: stopsByCode, timetable: timetable, now: now)
         let (realtime, realtimeIssue) = await realtimeSnapshot(now: now)
 
         return codes.map { code in
@@ -153,15 +153,16 @@ actor DepartureService {
         }
     }
 
-    /// Calls per stop code, from the timetable database.
-    private func calls(for stopsByCode: [String: [GTFSStop]], timetable: StaticTimetable) async throws -> [String: [StopCall]] {
+    /// Calls per stop code that can matter at `now`, from the timetable database.
+    private func calls(for stopsByCode: [String: [GTFSStop]], timetable: StaticTimetable, now: Date) async throws -> [String: [StopCall]] {
         var codeByStopID: [String: String] = [:]
         for (code, stops) in stopsByCode {
             for stop in stops { codeByStopID[stop.id] = code }
         }
         let stopIDs = Set(codeByStopID.keys)
+        let windows = calculator.arrivalWindows(at: now)
         let calls = try await Task.detached(priority: .userInitiated) {
-            try timetable.calls(atStopIDs: stopIDs)
+            try timetable.calls(atStopIDs: stopIDs, arrivalWindows: windows)
         }.value
 
         var grouped = Dictionary(uniqueKeysWithValues: stopsByCode.keys.map { ($0, [StopCall]()) })

@@ -30,6 +30,30 @@ struct DepartureCalculator {
     /// Buses that were due very recently are still shown ("Due").
     var lookBehind: TimeInterval = 60
     var limit = 12
+    /// Late buses can still be on their way long after their scheduled time.
+    var maximumLateness: TimeInterval = 2 * 3600
+    /// Early buses can be due inside the look-ahead window though scheduled after it.
+    var maximumEarliness: TimeInterval = 30 * 60
+
+    /// The service days whose trips can be running at `now`. Trips from yesterday can run past
+    /// midnight (times ≥ 24:00:00); tomorrow's early trips can fall inside the look-ahead
+    /// window late at night.
+    private func serviceDates(at now: Date) -> [GTFSDate] {
+        let today = GTFSDate(date: now, calendar: calendar)
+        return (-1...1).map { today.adding(days: $0, calendar: calendar) }
+    }
+
+    /// The scheduled arrival times, in seconds after the start of a service day, that
+    /// `departures` can use at `now`: one range per service day. Lets the timetable load only
+    /// those calls.
+    func arrivalWindows(at now: Date) -> [ClosedRange<Int>] {
+        let first = now.addingTimeInterval(-lookBehind - maximumLateness)
+        let last = now.addingTimeInterval(lookAhead + maximumEarliness)
+        return serviceDates(at: now).map { serviceDate in
+            let reference = serviceDate.serviceDayReference(calendar: calendar)
+            return Int(first.timeIntervalSince(reference).rounded(.down))...Int(last.timeIntervalSince(reference).rounded(.up))
+        }
+    }
 
     /// How the live data affects one scheduled call.
     enum RealtimeStatus: Equatable {
@@ -48,25 +72,19 @@ struct DepartureCalculator {
         realtime: RealtimeSnapshot?,
         now: Date
     ) -> [Departure] {
-        let today = GTFSDate(date: now, calendar: calendar)
         let earliest = now.addingTimeInterval(-lookBehind)
         let latest = now.addingTimeInterval(lookAhead)
-        // Late buses can still be on their way long after their scheduled time.
-        let maximumLateness: TimeInterval = 2 * 3600
 
         var results: [Departure] = []
 
-        // Trips from yesterday can run past midnight (times ≥ 24:00:00); tomorrow's
-        // early trips can fall inside the look-ahead window late at night.
-        for dayOffset in -1...1 {
-            let serviceDate = today.adding(days: dayOffset, calendar: calendar)
+        for serviceDate in serviceDates(at: now) {
             let reference = serviceDate.serviceDayReference(calendar: calendar)
 
             // A trip that ends here can't be boarded, so it isn't a departure.
             for call in calls where !call.isLastStop {
                 let scheduled = reference.addingTimeInterval(TimeInterval(call.arrival))
                 guard scheduled >= earliest.addingTimeInterval(-maximumLateness),
-                      scheduled <= latest.addingTimeInterval(30 * 60),
+                      scheduled <= latest.addingTimeInterval(maximumEarliness),
                       timetable.services.isActive(call.serviceID, on: serviceDate, calendar: calendar) else { continue }
 
                 let status = realtime?.update(forTripID: call.tripID, serviceDate: serviceDate)
