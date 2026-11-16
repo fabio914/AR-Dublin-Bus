@@ -110,7 +110,7 @@ actor TimetableStore {
 
         // Keep using the cached copy, but fetch a newer one in the background when stale.
         if !downloaded, let downloadedAt, Date.now.timeIntervalSince(downloadedAt) > maximumAge {
-            Task { try? await self.refreshInBackground() }
+            Task { await self.refreshInBackground() }
         }
         return timetable
     }
@@ -122,9 +122,15 @@ actor TimetableStore {
         }.value
     }
 
-    private func refreshInBackground() async throws {
-        try await downloadAndBuild()
-        timetable = try await openDatabase()
+    /// Fetches a newer feed while the current one stays in use. If that fails (offline, say),
+    /// the current timetable is kept and the phase goes back to `.ready`.
+    private func refreshInBackground() async {
+        do {
+            try await downloadAndBuild()
+            timetable = try await openDatabase()
+        } catch {
+            // Tried again the next time the app starts with a stale timetable.
+        }
         report(.ready(downloadedAt: downloadDate() ?? .now))
     }
 
