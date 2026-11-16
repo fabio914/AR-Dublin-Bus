@@ -31,9 +31,9 @@ struct StopLookupView: View {
                                 .onSubmit(show)
                             if !input.isEmpty {
                                 Button {
-                                    // Start a new search straight away.
+                                    // Back to the favourites, with the keyboard down.
                                     input = ""
-                                    isInputFocused = true
+                                    isInputFocused = false
                                 } label: {
                                     Image(systemName: "xmark.circle.fill")
                                         .foregroundStyle(.secondary)

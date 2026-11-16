@@ -9,6 +9,8 @@ import UIKit
 /// `stops` contains; the owner reloads them for the visible area via `onVisibleAreaChange`.
 struct ClusteredStopsMap: UIViewRepresentable {
     let stops: [GTFSStop]
+    /// Codes of the starred stops, whose pins are yellow and never clustered.
+    let favouriteCodes: Set<String>
     /// The stop whose board is showing; cleared when the board is dismissed.
     let selectedStopID: String?
     let onVisibleAreaChange: (MKCoordinateRegion) -> Void
@@ -54,7 +56,7 @@ struct ClusteredStopsMap: UIViewRepresentable {
 
     func updateUIView(_ mapView: MKMapView, context: Context) {
         context.coordinator.parent = self
-        context.coordinator.show(stops, on: mapView)
+        context.coordinator.show(stops, favouriteCodes: favouriteCodes, on: mapView)
 
         if selectedStopID == nil {
             for annotation in mapView.selectedAnnotations where annotation is StopAnnotation {
@@ -83,6 +85,7 @@ struct ClusteredStopsMap: UIViewRepresentable {
         var parent: ClusteredStopsMap
         let locationManager = CLLocationManager()
         private var annotationsByStopID: [String: StopAnnotation] = [:]
+        private var favouriteCodes: Set<String> = []
         private var hasCenteredOnUser = false
 
         init(parent: ClusteredStopsMap) {
@@ -90,8 +93,17 @@ struct ClusteredStopsMap: UIViewRepresentable {
         }
 
         /// Adds and removes pins so the map shows exactly `stops`, keeping unchanged ones
-        /// (and so their clusters) in place.
-        func show(_ stops: [GTFSStop], on mapView: MKMapView) {
+        /// (and so their clusters) in place. Pins of stops starred or unstarred since the
+        /// last call are added again, so they get their new look and clustering.
+        func show(_ stops: [GTFSStop], favouriteCodes: Set<String>, on mapView: MKMapView) {
+            let changedCodes = favouriteCodes.symmetricDifference(self.favouriteCodes)
+            self.favouriteCodes = favouriteCodes
+            if !changedCodes.isEmpty {
+                let restyled = annotationsByStopID.values.filter { changedCodes.contains($0.stop.code) }
+                mapView.removeAnnotations(restyled)
+                mapView.addAnnotations(restyled)
+            }
+
             let wanted = Dictionary(stops.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
             let removed = annotationsByStopID.filter { wanted[$0.key] == nil }
             let added = wanted.compactMap { id, stop in annotationsByStopID[id] == nil ? StopAnnotation(stop: stop) : nil }
@@ -125,13 +137,16 @@ struct ClusteredStopsMap: UIViewRepresentable {
             switch annotation {
             case is StopAnnotation:
                 let view = mapView.dequeueReusableAnnotationView(withIdentifier: Self.stopReuseIdentifier, for: annotation)
-                if let marker = view as? MKMarkerAnnotationView {
-                    marker.clusteringIdentifier = "stops"
-                    marker.markerTintColor = UIColor(TFIColors.green)
-                    marker.glyphImage = UIImage(systemName: "bus.fill")
+                if let marker = view as? MKMarkerAnnotationView, let stop = annotation as? StopAnnotation {
+                    let isFavourite = favouriteCodes.contains(stop.stop.code)
+                    // Favourites stand out: yellow with a star, and kept out of clusters.
+                    marker.clusteringIdentifier = isFavourite ? nil : "stops"
+                    marker.markerTintColor = UIColor(isFavourite ? TFIColors.yellow : TFIColors.green)
+                    marker.glyphTintColor = isFavourite ? UIColor(TFIColors.ink) : .white
+                    marker.glyphImage = UIImage(systemName: isFavourite ? "star.fill" : "bus.fill")
                     marker.titleVisibility = .adaptive
                     marker.subtitleVisibility = .hidden
-                    marker.displayPriority = .defaultHigh
+                    marker.displayPriority = isFavourite ? .required : .defaultHigh
                 }
                 return view
             case is MKClusterAnnotation:

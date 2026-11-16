@@ -78,6 +78,7 @@ struct StopsMapView: View {
                 if let model {
                     ClusteredStopsMap(
                         stops: model.stops,
+                        favouriteCodes: Set(appModel.favourites.stops.map(\.code)),
                         selectedStopID: selectedStop?.id,
                         onVisibleAreaChange: { model.visibleAreaChanged($0) },
                         onSelectStop: { selectedStop = $0 }
