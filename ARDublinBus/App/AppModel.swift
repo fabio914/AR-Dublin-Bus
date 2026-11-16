@@ -32,6 +32,10 @@ final class AppModel {
     /// Valid stop codes once the timetable is loaded; used to reject OCR misreads.
     private(set) var knownStopCodes: Set<String>?
     private(set) var hasAPIKey: Bool
+    /// The timetable has been downloaded and opened, so the app's screens have data to show.
+    private(set) var isTimetableLoaded = false
+    /// Why the timetable couldn't be loaded, until the next attempt.
+    private(set) var timetableLoadError: String?
 
     /// Nearby stops shown as labels in the AR view.
     var showsARStops: Bool {
@@ -85,7 +89,14 @@ final class AppModel {
     }
 
     private func loadStopCodes() async {
-        knownStopCodes = try? await service.knownStopCodes()
+        timetableLoadError = nil
+        do {
+            knownStopCodes = try await service.knownStopCodes()
+            isTimetableLoaded = true
+        } catch {
+            // A failed refresh leaves the timetable that was already loaded in use.
+            if !isTimetableLoaded { timetableLoadError = error.localizedDescription }
+        }
     }
 
     func saveAPIKey(_ key: String) {

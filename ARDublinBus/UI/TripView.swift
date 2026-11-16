@@ -32,7 +32,7 @@ struct TripView: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
-        .background(Color(.systemGroupedBackground))
+        .background(Color.appBackground)
         .navigationTitle(journey.map { "Route \($0.route.shortName)" } ?? "Route")
         .navigationBarTitleDisplayMode(.inline)
         .task(id: reference) {
@@ -62,7 +62,7 @@ private struct TripMap: View {
     var body: some View {
         Map(position: $position) {
             MapPolyline(coordinates: journey.shape)
-                .stroke(TFIColors.green, style: StrokeStyle(lineWidth: 5, lineCap: .round, lineJoin: .round))
+                .stroke(Color.appTint, style: StrokeStyle(lineWidth: 5, lineCap: .round, lineJoin: .round))
 
             ForEach(journey.stops) { stop in
                 if let coordinate = stop.stop.coordinate {

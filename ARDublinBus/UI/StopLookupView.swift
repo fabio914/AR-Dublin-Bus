@@ -1,10 +1,9 @@
 import SwiftUI
 
-/// Look up a stop by number or name without the camera — handy when a sign can't be read,
-/// and for trying the app in the Simulator. Matching stops are listed as you type.
+/// The Search tab: look up a stop by number or name without the camera — handy when a sign
+/// can't be read, and for trying the app in the Simulator. Matching stops are listed as you type.
 struct StopLookupView: View {
     @Environment(AppModel.self) private var model
-    @Environment(\.dismiss) private var dismiss
     @State private var input = ""
     @State private var results: [StopSearchResult] = []
     /// The query `results` are for (`nil` before the first search finishes).
@@ -44,29 +43,29 @@ struct StopLookupView: View {
                         }
                         .padding(.horizontal, 10)
                         .padding(.vertical, 8)
-                        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                        .background(Color.appCard, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
 
-                        Button("Show", action: show)
-                            .buttonStyle(.borderedProminent)
-                            .tint(TFIColors.green)
-                            .disabled(query.isEmpty)
+                        // Only while typing; the keyboard's own search key does the same.
+                        if isInputFocused {
+                            Button("Search", action: show)
+                                .buttonStyle(.borderedProminent)
+                                .tint(TFIColors.green)
+                                .disabled(query.isEmpty)
+                                .transition(.move(edge: .trailing).combined(with: .opacity))
+                        }
                     }
+                    .animation(.default, value: isInputFocused)
                     content
                 }
                 .padding()
             }
             .scrollDismissesKeyboard(.interactively)
-            .background(Color(.systemGroupedBackground))
-            .navigationTitle("Look up a stop")
+            .background(Color.appBackground)
+            .navigationTitle("Search")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Done") { dismiss() }
-                }
-            }
             .tripDestination()
         }
-        // Ready to type as soon as the sheet opens.
+        // Ready to type as soon as the tab opens.
         .onAppear { isInputFocused = true }
         .onChange(of: input) { selectedCode = nil }
         .task(id: query) {
@@ -93,7 +92,7 @@ struct StopLookupView: View {
                         .font(.subheadline.weight(.semibold))
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                .tint(TFIColors.green)
+                .tint(Color.appTint)
             }
             StopBoardView(stopCode: selectedCode)
         } else if query.isEmpty {

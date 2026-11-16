@@ -34,16 +34,15 @@ final class NearbyStopsModel {
         self.service = service
     }
 
-    /// Finds the user, then keeps the nearby boards fresh until cancelled.
+    /// Finds the user, then keeps the nearby boards fresh until cancelled. Runs again each
+    /// time the tab comes back, so the previous stops stay on screen until the new ones arrive.
     func run() async {
-        phase = .locating
-        stops = []
-        departures = []
+        phase = stops.isEmpty ? .locating : (updatedAt == nil ? .loading : .loaded)
 
         let nearby: [NearbyStop]
         do {
             let location = try await locationProvider.currentLocation()
-            phase = .loading
+            if stops.isEmpty { phase = .loading }
             nearby = try await service.nearbyStops(around: location.coordinate)
         } catch LocationError.denied {
             phase = .locationDenied
@@ -52,7 +51,12 @@ final class NearbyStopsModel {
             if !Task.isCancelled { phase = .failed(error.localizedDescription) }
             return
         }
-        stops = nearby.map { StopEntry(stop: $0) }
+        if nearby.map(\.id) != stops.map(\.id) {
+            stops = nearby.map { StopEntry(stop: $0) }
+            departures = []
+            updatedAt = nil
+            phase = .loading
+        }
 
         while !Task.isCancelled {
             do {
@@ -78,7 +82,6 @@ final class NearbyStopsModel {
 /// Stops near the user, each with its next buses, plus one merged list of buses nearby.
 struct NearbyStopsView: View {
     @Environment(AppModel.self) private var appModel
-    @Environment(\.dismiss) private var dismiss
     @Environment(\.openURL) private var openURL
 
     @State private var model: NearbyStopsModel?
@@ -102,15 +105,12 @@ struct NearbyStopsView: View {
             .navigationTitle("Nearby")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
+                ToolbarItem(placement: .topBarTrailing) {
                     Button {
                         runID = UUID()
                     } label: {
                         Label("Update location", systemImage: "location.circle")
                     }
-                }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Done") { dismiss() }
                 }
             }
             .navigationDestination(for: NearbyStop.self) { stop in
@@ -118,7 +118,7 @@ struct NearbyStopsView: View {
                     StopBoardView(stopCode: stop.stop.code)
                         .padding()
                 }
-                .background(Color(.systemGroupedBackground))
+                .background(Color.appBackground)
                 .navigationTitle("Stop \(stop.stop.code)")
                 .navigationBarTitleDisplayMode(.inline)
             }
@@ -200,7 +200,7 @@ struct NearbyStopsView: View {
             .padding(.horizontal, 16)
             .padding(.bottom, 24)
         }
-        .background(Color(.systemGroupedBackground))
+        .background(Color.appBackground)
         .refreshable { runID = UUID() }
     }
 }

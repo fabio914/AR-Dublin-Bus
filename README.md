@@ -20,12 +20,15 @@ any stop by number, and includes an Apple Watch app.
   where available, and GPS + compass elsewhere (sharpened by recognising a stop sign).
 - **Nearby:** uses your location to list the stops within 600 m, nearest first, each with its
   next buses, plus a merged "Next buses" list across all of them.
-- **Look up:** search by stop number or name. Matching stops are listed as you type, with the
+- **Search:** search by stop number or name. Matching stops are listed as you type, with the
   routes that call at each. Names match regardless of case, accents and apostrophes, and the
   abbreviations in stop names are understood ("oconnell street lower" finds "O'Connell St Lwr").
-- **Map:** every bus stop on a map, clustered when zoomed out. Tap a stop to see its board in a
-  half-height sheet, with the map still usable behind it.
-- **Line view:** tap a bus on any board (Map, Nearby or Look up) to see its route on a map and
+- **Intro:** the first launch downloads the timetable, with a retry if it fails, and offers to
+  set the NTA API key. Later launches go straight to the tabs once the timetable is open.
+- **Map:** the first tab. Every bus stop on a map, clustered when zoomed out. Tap a stop to see
+  its board in a half-height sheet, with the map still usable behind it. The AR button in the
+  navigation bar opens the camera view.
+- **Line view:** tap a bus on any board (Map, Nearby or Search) to see its route on a map and
   every stop it calls at, with live times, the stop you picked it from highlighted, and the stops
   it has already passed greyed out.
 - **Apple Watch:** shows the stops near you as pages you swipe between, each with its next buses
@@ -70,14 +73,14 @@ local database, so the first board takes a little longer.
 
 ### Trying it in the Simulator
 
-ARKit isn't available in the Simulator, but **Nearby** and **Look up** are. To pretend you're on
+ARKit isn't available in the Simulator, but the **Map**, **Nearby** and **Search** tabs are. To pretend you're on
 O'Connell Street:
 
 ```sh
 xcrun simctl location booted set 53.348596,-6.259485
 ```
 
-Then open Nearby or the Map, or look up stop 271.
+Then open the Map or Nearby, or search for stop 271.
 
 ## How it works
 
@@ -178,7 +181,7 @@ answer so the app opens with something to show.
 | `ARDublinBus/Realtime` | GTFS-Realtime client and models. |
 | `ARDublinBus/Departures` | Merges timetable and live data into boards and trip journeys. |
 | `ARDublinBus/Map` | The clustered map of stops (`MKMapView`). |
-| `ARDublinBus/UI` | SwiftUI screens: AR view, Nearby, Look up, stop board, line view. |
+| `ARDublinBus/UI` | SwiftUI screens: the intro, the tab bar, AR view, Nearby, Search, stop board, line view. |
 | `ARDublinBus/Watch` | Answers requests from the watch app. |
 | `ARDublinBusWatch` | The watchOS app. |
 | `Shared` | Code used by both apps: location and watch messages. |
