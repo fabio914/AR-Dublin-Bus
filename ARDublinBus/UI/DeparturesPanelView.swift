@@ -73,7 +73,7 @@ struct DeparturesPanelView: View {
                     }
                 }
             }
-            PanelFooter { RealtimeStatusLabel(issue: board.realtimeIssue, updatedAt: board.generatedAt) }
+            PanelFooter { RealtimeStatusLabel(issue: board.realtimeIssue, updatedAt: board.updatedAt) }
         }
     }
 

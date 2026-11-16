@@ -130,7 +130,7 @@ private struct TripStopsList: View {
                         }
                     }
                     .padding(.vertical, 6)
-                    PanelFooter { RealtimeStatusLabel(issue: journey.realtimeIssue, updatedAt: journey.generatedAt) }
+                    PanelFooter { RealtimeStatusLabel(issue: journey.realtimeIssue, updatedAt: journey.updatedAt) }
                 }
                 .shadow(color: .black.opacity(0.12), radius: 10, y: 3)
                 .padding(16)

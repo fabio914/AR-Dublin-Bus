@@ -60,7 +60,7 @@ final class NearbyStopsModel {
                 guard !Task.isCancelled else { return }
                 stops = zip(nearby, boards).map { StopEntry(stop: $0, board: $1) }
                 departures = NearbyDepartures.merge(Array(zip(nearby, boards)).map { (stop: $0, board: $1) })
-                updatedAt = .now
+                updatedAt = boards.first?.updatedAt ?? .now
                 phase = .loaded
             } catch {
                 if !Task.isCancelled, updatedAt == nil { phase = .failed(error.localizedDescription) }

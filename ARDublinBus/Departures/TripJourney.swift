@@ -26,7 +26,12 @@ struct TripJourney: Sendable {
     let shape: [CLLocationCoordinate2D]
     /// When live data is unavailable, why.
     let realtimeIssue: String?
+    /// When the live feed was published (or fetched, if it doesn't say).
+    let realtimeTimestamp: Date?
     let generatedAt: Date
+
+    /// The time to show as "updated": the live feed's when there is one.
+    var updatedAt: Date { realtimeTimestamp ?? generatedAt }
 
     /// The stop the user picked the bus from.
     var origin: Stop? { stops.first { $0.sequence == reference.stopSequence } }
@@ -83,6 +88,7 @@ struct TripJourney: Sendable {
             stops: stops,
             shape: shape,
             realtimeIssue: realtimeIssue,
+            realtimeTimestamp: realtime.map { $0.feedTimestamp ?? $0.fetchedAt },
             generatedAt: now
         )
     }

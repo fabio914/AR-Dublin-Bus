@@ -9,8 +9,12 @@ struct StopBoard: Equatable, Sendable {
     let departures: [Departure]
     /// When live data is unavailable, why (departures then come from the timetable only).
     let realtimeIssue: String?
+    /// When the live feed was published (or fetched, if it doesn't say).
     let realtimeTimestamp: Date?
     let generatedAt: Date
+
+    /// The time to show as "updated": the live feed's when there is one.
+    var updatedAt: Date { realtimeTimestamp ?? generatedAt }
 
     var hasLiveData: Bool { realtimeIssue == nil && realtimeTimestamp != nil }
 }

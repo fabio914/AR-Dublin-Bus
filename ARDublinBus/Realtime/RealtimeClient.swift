@@ -66,6 +66,8 @@ actor RealtimeClient {
     private let session: URLSession
     private let apiKey: @Sendable () -> String?
     private let minimumInterval: TimeInterval
+    /// A feed older than this is no longer shown as live.
+    static let maximumAge: TimeInterval = 5 * 60
     private var cached: RealtimeSnapshot?
     private var lastAttempt: Date?
     private var lastError: Error?
@@ -78,12 +80,12 @@ actor RealtimeClient {
     }
 
     /// Returns a snapshot no older than `minimumInterval`, fetching if needed.
-    /// If a refetch fails but an older snapshot exists, the older one is returned.
+    /// If a refetch fails, the previous snapshot is returned while it is younger than `maximumAge`.
     func snapshot(now: Date = .now) async throws -> RealtimeSnapshot {
         if let inFlight { return try await inFlight.value }
 
         if let lastAttempt, now.timeIntervalSince(lastAttempt) < minimumInterval {
-            if let cached { return cached }
+            if let cached = usableCache(at: now) { return cached }
             if let lastError { throw lastError }
         }
 
@@ -93,7 +95,7 @@ actor RealtimeClient {
 
         lastAttempt = now
         let session = self.session
-        let task = Task { try await Self.fetch(session: session, apiKey: key) }
+        let task = Task { try await Self.fetch(session: session, apiKey: key, now: now) }
         inFlight = task
         defer { inFlight = nil }
 
@@ -105,9 +107,14 @@ actor RealtimeClient {
         } catch {
             lastError = error
             // A stale feed is still better than none for a few minutes.
-            if let cached, now.timeIntervalSince(cached.fetchedAt) < 5 * 60 { return cached }
+            if let cached = usableCache(at: now) { return cached }
             throw error
         }
+    }
+
+    private func usableCache(at now: Date) -> RealtimeSnapshot? {
+        guard let cached, now.timeIntervalSince(cached.fetchedAt) < Self.maximumAge else { return nil }
+        return cached
     }
 
     /// Forgets cached data and errors, e.g. after the API key changes.
@@ -117,7 +124,7 @@ actor RealtimeClient {
         lastError = nil
     }
 
-    private static func fetch(session: URLSession, apiKey: String) async throws -> RealtimeSnapshot {
+    private static func fetch(session: URLSession, apiKey: String, now: Date) async throws -> RealtimeSnapshot {
         var request = URLRequest(url: endpoint)
         request.setValue(apiKey, forHTTPHeaderField: "x-api-key")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
@@ -135,7 +142,7 @@ actor RealtimeClient {
         }
 
         return try await Task.detached(priority: .userInitiated) {
-            RealtimeSnapshot(feed: try GTFSRFeedMessage.decode(from: data))
+            RealtimeSnapshot(feed: try GTFSRFeedMessage.decode(from: data), fetchedAt: now)
         }.value
     }
 }

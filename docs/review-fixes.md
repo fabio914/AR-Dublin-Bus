@@ -8,7 +8,7 @@ Each fix is one commit on the `review-fixes` branch.
 - [x] **1. Stuck "Downloading…" banner.** When the background refresh of a stale timetable
   fails (for example offline), the phase stays at `.downloading` until the app is relaunched,
   which also disables "Download latest timetable" in Settings. (`TimetableStore`)
-- [ ] **2. Stale live data shown as live.** After a failed fetch, `RealtimeClient` keeps
+- [x] **2. Stale live data shown as live.** After a failed fetch, `RealtimeClient` keeps
   returning its cached feed for the rest of the throttle window however old it is, and the
   footer says "Live · updated" with the current time instead of the feed's time.
 - [ ] **3. Boards list buses that terminate at the stop.** A trip's final call is an arrival
