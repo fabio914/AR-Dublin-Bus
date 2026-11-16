@@ -216,6 +216,115 @@ final class StaticTimetable: @unchecked Sendable {
         }
     }
 
+    // MARK: Lines
+
+    /// Every route leaving the stops with this code (trips ending there are left out), with
+    /// its destinations and its paths from the stop onwards, sorted naturally by route name.
+    func lines(atStopCode code: String) throws -> [StopLine] {
+        let stopRows = (stopsByCode[code] ?? []).compactMap { stopRowsByID[$0.id] }
+        guard !stopRows.isEmpty else { return [] }
+
+        struct Variant {
+            let pattern: Int
+            let sequence: Int
+            let calls: Data
+            let routeID: String
+            let headsign: String
+            let shape: Int?
+            let trips: Int
+        }
+
+        return try withDatabase { database in
+            // Each way of leaving the stop: a pattern (the stops a trip makes) with the route,
+            // destination and shape of the trips using it.
+            let query = try database.prepare("""
+                SELECT ps.pattern, ps.sequence, p.calls, r.route_id, h.text, t.shape, COUNT(*)
+                FROM pattern_stops ps
+                JOIN patterns p ON p.id = ps.pattern
+                JOIN trips t ON t.pattern = ps.pattern
+                JOIN routes r ON r.id = t.route
+                JOIN headsigns h ON h.id = t.headsign
+                WHERE ps.stop = ? AND ps.is_last = 0
+                GROUP BY ps.pattern, ps.sequence, t.route, t.headsign, t.shape
+                """)
+            var variants: [Variant] = []
+            for row in stopRows {
+                query.bind(row, at: 1)
+                while try query.step() {
+                    variants.append(Variant(
+                        pattern: query.int(0), sequence: query.int(1), calls: query.data(2),
+                        routeID: query.string(3), headsign: query.string(4), shape: query.optionalInt(5),
+                        trips: query.int(6)
+                    ))
+                }
+                query.reset()
+            }
+
+            let shapeQuery = try database.prepare("SELECT points FROM shapes WHERE id = ?")
+            var shapes: [Int: [CLLocationCoordinate2D]] = [:]
+            func shape(_ row: Int) throws -> [CLLocationCoordinate2D] {
+                if let cached = shapes[row] { return cached }
+                shapeQuery.bind(row, at: 1)
+                let points = try shapeQuery.step() ? ShapeCoding.decode(shapeQuery.data(0)) : []
+                shapeQuery.reset()
+                shapes[row] = points
+                return points
+            }
+
+            struct Line {
+                var tripsByHeadsign: [String: Int] = [:]
+                /// Keyed so the same path is drawn once.
+                var paths: [String: [CLLocationCoordinate2D]] = [:]
+            }
+            var lines: [String: Line] = [:]
+            /// The earliest start found on each shape, per route: a later one is part of it.
+            var shapeStarts: [String: [Int: Int]] = [:]
+
+            for variant in variants {
+                lines[variant.routeID, default: Line()].tripsByHeadsign[variant.headsign, default: 0] += variant.trips
+
+                // Calls are four integers each: sequence, stop row, departure offset, dwell.
+                let values = ShapeCoding.decodeIntegers(variant.calls)
+                var sequences: [Int] = []
+                var stops: [GTFSStop?] = []
+                var index = 0
+                while index + 3 < values.count {
+                    sequences.append(values[index])
+                    stops.append(stopsByRow[values[index + 1]])
+                    index += 4
+                }
+                guard let target = sequences.firstIndex(of: variant.sequence) else { continue }
+                let coordinates = stops.map { $0?.coordinate }
+                let points = try variant.shape.map(shape) ?? []
+                let (path, shapeStart) = StopLinePath.remainder(of: points, stops: coordinates, target: target)
+                guard path.count > 1 else { continue }
+
+                if let shapeRow = variant.shape, let shapeStart {
+                    // A later start on the same shape (a loop calling here twice) is part of this path.
+                    if let existing = shapeStarts[variant.routeID]?[shapeRow], existing <= shapeStart { continue }
+                    shapeStarts[variant.routeID, default: [:]][shapeRow] = shapeStart
+                    lines[variant.routeID]?.paths["shape \(shapeRow)"] = path
+                } else {
+                    // No usable shape: the path joins the stops, so key it by them.
+                    let key = "stops " + stops[target...].map { $0?.id ?? "?" }.joined(separator: ",")
+                    lines[variant.routeID]?.paths[key] = path
+                }
+            }
+
+            return lines.map { routeID, line in
+                StopLine(
+                    route: routes[routeID] ?? GTFSRoute(id: routeID, shortName: routeID, longName: ""),
+                    headsigns: line.tripsByHeadsign.sorted { ($1.value, $0.key) < ($0.value, $1.key) }.map(\.key),
+                    paths: line.paths.sorted { $0.key < $1.key }.map(\.value)
+                )
+            }
+            .sorted { lhs, rhs in
+                let order = lhs.route.shortName.localizedStandardCompare(rhs.route.shortName)
+                return order == .orderedSame ? lhs.route.id < rhs.route.id : order == .orderedAscending
+            }
+        }
+    }
+
     // MARK: Stops
 
     /// Stops inside `bounds`, using the R-tree index. `isTruncated` is true when more
