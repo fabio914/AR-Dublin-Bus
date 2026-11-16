@@ -2,6 +2,7 @@ import SwiftUI
 
 /// The Search tab: look up a stop by number or name without the camera — handy when a sign
 /// can't be read, and for trying the app in the Simulator. Matching stops are listed as you type.
+/// Before a search, it shows the starred stops with their next buses.
 struct StopLookupView: View {
     @Environment(AppModel.self) private var model
     @State private var input = ""
@@ -63,10 +64,9 @@ struct StopLookupView: View {
             .background(Color.appBackground)
             .navigationTitle("Search")
             .navigationBarTitleDisplayMode(.inline)
+            .navigationDestination(for: FavouriteStop.self) { StopBoardScreen(stopCode: $0.code) }
             .tripDestination()
         }
-        // Ready to type as soon as the tab opens.
-        .onAppear { isInputFocused = true }
         .onChange(of: input) { selectedCode = nil }
         .task(id: query) {
             guard !query.isEmpty else {
@@ -96,10 +96,7 @@ struct StopLookupView: View {
             }
             StopBoardView(stopCode: selectedCode)
         } else if query.isEmpty {
-            Text("Type a stop number, like 271, or part of a stop's name, like O'Connell.")
-                .font(.footnote)
-                .foregroundStyle(.secondary)
-                .frame(maxWidth: .infinity, alignment: .leading)
+            FavouriteStopsSection()
         } else if let searchError {
             Label(searchError, systemImage: "exclamationmark.triangle")
                 .font(.footnote)
@@ -149,6 +146,85 @@ struct StopLookupView: View {
             } else if found.count == 1 {
                 selectedCode = found[0].stop.code
             }
+        }
+    }
+}
+
+/// The starred stops, each with its next buses, kept up to date while shown.
+private struct FavouriteStopsSection: View {
+    @Environment(AppModel.self) private var model
+    @State private var boards: [String: StopBoard] = [:]
+    @State private var updatedAt: Date?
+    @State private var loadError: String?
+
+    private var favourites: [FavouriteStop] { model.favourites.stops }
+
+    var body: some View {
+        VStack(spacing: 16) {
+            if favourites.isEmpty {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Type a stop number, like 271, or part of a stop's name, like O'Connell.")
+                    Label("Star a stop to see its next buses here.", systemImage: "star")
+                }
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            } else {
+                HStack(spacing: 6) {
+                    Label("Favourites", systemImage: "star.fill")
+                        .font(.headline)
+                    Spacer(minLength: 0)
+                }
+                if let loadError {
+                    Label(loadError, systemImage: "exclamationmark.triangle")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                } else if let updatedAt {
+                    HStack(spacing: 6) {
+                        RealtimeStatusLabel(issue: boards.values.first?.realtimeIssue, updatedAt: updatedAt)
+                        Spacer(minLength: 0)
+                    }
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                }
+                ForEach(favourites) { favourite in
+                    let board = boards[favourite.code]
+                    StopSummaryCard(
+                        code: favourite.code,
+                        name: board?.stopName ?? favourite.name,
+                        board: board,
+                        unavailable: isKnown(favourite.code) ? nil : "This stop isn't in the current timetable.",
+                        destination: favourite
+                    )
+                    .transition(.opacity.combined(with: .scale(scale: 0.95)))
+                }
+            }
+        }
+        .task(id: [model.isTimetableLoaded.description] + favourites.map(\.code)) {
+            await refresh()
+        }
+    }
+
+    /// A stop dropped from a newer timetable has no board.
+    private func isKnown(_ code: String) -> Bool {
+        model.knownStopCodes?.contains(code) ?? true
+    }
+
+    private func refresh() async {
+        let codes = favourites.map(\.code).filter(isKnown)
+        guard !codes.isEmpty else { return }
+        while !Task.isCancelled {
+            do {
+                let found = try await model.service.boards(forStopCodes: codes)
+                guard !Task.isCancelled else { return }
+                boards = Dictionary(uniqueKeysWithValues: zip(codes, found))
+                updatedAt = found.first?.updatedAt ?? .now
+                loadError = nil
+            } catch {
+                if !Task.isCancelled { loadError = error.localizedDescription }
+            }
+            try? await Task.sleep(for: AppModel.refreshInterval)
         }
     }
 }

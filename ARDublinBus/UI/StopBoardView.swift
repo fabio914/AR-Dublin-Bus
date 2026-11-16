@@ -9,8 +9,14 @@ struct StopBoardView: View {
 
     var body: some View {
         TimelineView(.periodic(from: .now, by: 20)) { context in
-            DeparturesPanelView(content: content ?? .loading(stopCode: stopCode), now: context.date, maximumRows: 12, linksToTrips: true)
-                .shadow(color: .black.opacity(0.15), radius: 12, y: 4)
+            DeparturesPanelView(
+                content: content ?? .loading(stopCode: stopCode),
+                now: context.date,
+                maximumRows: 12,
+                linksToTrips: true,
+                favourite: favourite
+            )
+            .shadow(color: .black.opacity(0.15), radius: 12, y: 4)
         }
         .task(id: stopCode) {
             content = .loading(stopCode: stopCode)
@@ -24,6 +30,30 @@ struct StopBoardView: View {
                 try? await Task.sleep(for: AppModel.refreshInterval)
             }
         }
+    }
+
+    private var favourite: PanelHeader.Favourite {
+        var name = ""
+        if case .board(let board) = content { name = board.stopName }
+        let favourites = model.favourites
+        return .init(isOn: favourites.contains(stopCode)) { [stopCode] in
+            withAnimation { favourites.toggle(code: stopCode, name: name) }
+        }
+    }
+}
+
+/// A stop's board as a screen pushed onto a `NavigationStack` that uses `tripDestination()`.
+struct StopBoardScreen: View {
+    let stopCode: String
+
+    var body: some View {
+        ScrollView {
+            StopBoardView(stopCode: stopCode)
+                .padding()
+        }
+        .background(Color.appBackground)
+        .navigationTitle("Stop \(stopCode)")
+        .navigationBarTitleDisplayMode(.inline)
     }
 }
 

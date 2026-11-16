@@ -6,12 +6,13 @@ struct PanelCard<Content: View>: View {
     let title: String
     var subtitle: String?
     var accessory: PanelHeader.Accessory?
+    var favourite: PanelHeader.Favourite?
     var icon = "bus.fill"
     @ViewBuilder let content: Content
 
     var body: some View {
         VStack(spacing: 0) {
-            PanelHeader(title: title, subtitle: subtitle, accessory: accessory, icon: icon)
+            PanelHeader(title: title, subtitle: subtitle, accessory: accessory, favourite: favourite, icon: icon)
             content
         }
         .frame(maxWidth: .infinity)
@@ -34,9 +35,16 @@ struct PanelHeader: View {
         let text: String
     }
 
+    /// A star button on the right of the header, for starring the stop.
+    struct Favourite {
+        let isOn: Bool
+        let toggle: () -> Void
+    }
+
     let title: String
     var subtitle: String?
     var accessory: Accessory?
+    var favourite: Favourite?
     var icon = "bus.fill"
 
     var body: some View {
@@ -65,6 +73,18 @@ struct PanelHeader: View {
                     .padding(.vertical, 6)
                     .background(Color.white.opacity(0.18), in: Capsule())
                     .fixedSize()
+            }
+            if let favourite {
+                Button(action: favourite.toggle) {
+                    Image(systemName: favourite.isOn ? "star.fill" : "star")
+                        .font(.system(size: 20, weight: .semibold))
+                        .foregroundStyle(favourite.isOn ? TFIColors.yellow : .white)
+                        .frame(width: 36, height: 36)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(favourite.isOn ? "Remove from favourites" : "Add to favourites")
+                .sensoryFeedback(.selection, trigger: favourite.isOn)
             }
         }
         .foregroundStyle(.white)
