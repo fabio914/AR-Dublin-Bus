@@ -15,6 +15,9 @@ any stop by number, and includes an Apple Watch app.
 - **AR departures board:** recognises the stop flag, reads its number (for example "Stop 271"
   on O'Connell St Lower), and floats a board with the next buses next to it. The board turns
   to face you and refreshes every 15 seconds.
+- **Stops around you in AR:** the stops within 400 m float as labels over their real positions,
+  with name, number, routes and distance. Tap one to see its board. Uses Apple's location anchors
+  where available, and GPS + compass elsewhere (sharpened by recognising a stop sign).
 - **Nearby:** uses your location to list the stops within 600 m, nearest first, each with its
   next buses, plus a merged "Next buses" list across all of them.
 - **Look up:** search by stop number or name. Matching stops are listed as you type, with the
@@ -134,6 +137,26 @@ happens once per download, in the background.
 
 Stops, routes and the service calendar are small and kept in memory; trips, calls and shapes are
 read from the database when needed (`StaticTimetable`).
+
+### Stops in AR
+
+`ARStopsController` fetches the stops within 400 m (R-tree query, re-run after you move 40 m)
+and places a label over each, in one of two ways:
+
+- **Location anchors:** at launch, `ARGeoTrackingConfiguration.checkAvailability(at:)` checks
+  whether Apple supports geo tracking where you are. If so, the session switches to geo tracking,
+  and once it has matched your surroundings against Apple Maps, each stop becomes an
+  `ARGeoAnchor` at ground level. Positions are accurate to a metre or two.
+- **GPS + compass** (everywhere else, and while geo tracking is still localising): the session is
+  aligned with gravity and heading, so x points east and z south. `GeoAlignment` works out where
+  the AR origin is on the map by averaging recent GPS fixes against where the camera was at each
+  fix, weighted by accuracy, then converts each stop's coordinates to metres. Expect several
+  metres of error. When a sign is recognised, its stop's mapped position replaces the GPS
+  estimate, which pulls every label into place.
+
+If geo tracking turns out not to work (unsupported here, or the session fails), the app falls
+back to GPS + compass for the rest of the run. The line under the status badge shows which mode
+is in use. Labels can be switched off in Settings.
 
 ### Apple Watch
 

@@ -26,3 +26,31 @@ struct StopBoardView: View {
         }
     }
 }
+
+/// A stop's board in a sheet over another screen (the map, or the AR view), with its own
+/// navigation so buses can open their line.
+struct StopBoardSheet: View {
+    let stop: GTFSStop
+    let done: () -> Void
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                StopBoardView(stopCode: stop.code)
+                    .padding()
+            }
+            .background(Color(.systemGroupedBackground))
+            .navigationTitle(stop.name)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done", action: done)
+                }
+            }
+            .tripDestination()
+        }
+        .presentationDetents([.medium, .large])
+        // Keep the screen behind usable while the board is at half height.
+        .presentationBackgroundInteraction(.enabled(upThrough: .medium))
+    }
+}

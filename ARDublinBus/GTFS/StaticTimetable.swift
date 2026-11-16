@@ -221,8 +221,12 @@ final class StaticTimetable: @unchecked Sendable {
 
     /// Stops whose number or name matches `query` (see `StopSearchIndex`), with their routes.
     func searchStops(_ query: String, limit: Int) throws -> [StopSearchResult] {
-        let stops = searchIndex.search(query, limit: limit)
-        return try withDatabase { database in
+        try withRoutes(searchIndex.search(query, limit: limit))
+    }
+
+    /// Each stop with the routes calling at it (at any stop sharing its code), sorted naturally.
+    func withRoutes(_ stops: [GTFSStop]) throws -> [StopSearchResult] {
+        try withDatabase { database in
             let routeQuery = try database.prepare("""
                 SELECT DISTINCT r.short_name FROM pattern_stops ps
                 JOIN trips t ON t.pattern = ps.pattern

@@ -3,7 +3,11 @@ import RealityKit
 import UIKit
 
 /// Runs the AR session: detects the bus pictogram, reads the stop number under it,
-/// and keeps a departures panel anchored to the sign.
+/// and keeps a departures panel anchored to the sign. Nearby stops are shown as floating
+/// labels by `ARStopsController`.
+///
+/// The session uses geo tracking (`ARGeoTrackingConfiguration`) where Apple supports it,
+/// and world tracking aligned with gravity and the compass everywhere else.
 @MainActor
 final class ARCoordinator: NSObject, ARSessionDelegate {
     private let model: AppModel
@@ -15,6 +19,14 @@ final class ARCoordinator: NSObject, ARSessionDelegate {
     private var isReading = false
     private var lastReadAttempt: TimeInterval = 0
     private var failedReads = 0
+
+    private var stopsController: ARStopsController?
+    /// The session runs `ARGeoTrackingConfiguration`.
+    private var usesGeoTracking = false
+    /// Geo tracking failed this run: stay on world tracking.
+    private var geoTrackingFailed = false
+    /// Geo tracking became available while a sign was tracked; switch once it's gone.
+    private var pendingGeoSwitch = false
 
     /// Seconds between OCR attempts while the stop number is unknown.
     private let readInterval: TimeInterval = 0.35
@@ -52,7 +64,16 @@ final class ARCoordinator: NSObject, ARSessionDelegate {
         self.arView = arView
         arView.session.delegate = self
         arView.renderOptions.insert(.disableMotionBlur)
+
+        let stopsController = ARStopsController(arView: arView, service: model.service)
+        stopsController.onStatusChange = { [weak self] status in self?.model.arStopsStatus = status }
+        stopsController.onGeoTrackingAvailable = { [weak self] in self?.switchToGeoTracking() }
+        self.stopsController = stopsController
+        model.onShowsARStopsChange = { [weak stopsController] enabled in stopsController?.setEnabled(enabled) }
+        arView.addGestureRecognizer(UITapGestureRecognizer(target: self, action: #selector(handleTap(_:))))
+
         startSession()
+        stopsController.setEnabled(model.showsARStops)
     }
 
     func startSession() {
@@ -60,14 +81,57 @@ final class ARCoordinator: NSObject, ARSessionDelegate {
             model.trackingStatus = .unsupported
             return
         }
-        let configuration = ARWorldTrackingConfiguration()
-        configuration.detectionImages = BusStopSign.makeReferenceImages()
-        configuration.maximumNumberOfTrackedImages = 1
-        configuration.automaticImageScaleEstimationEnabled = true
+        let configuration: ARConfiguration
+        if usesGeoTracking {
+            let geo = ARGeoTrackingConfiguration()
+            geo.detectionImages = BusStopSign.makeReferenceImages()
+            geo.maximumNumberOfTrackedImages = 1
+            geo.automaticImageScaleEstimationEnabled = true
+            configuration = geo
+        } else {
+            let world = ARWorldTrackingConfiguration()
+            // x east, y up, z south: lets stops be placed from GPS and the compass.
+            world.worldAlignment = .gravityAndHeading
+            world.detectionImages = BusStopSign.makeReferenceImages()
+            world.maximumNumberOfTrackedImages = 1
+            world.automaticImageScaleEstimationEnabled = true
+            configuration = world
+        }
 
         removeSign()
         arView?.session.run(configuration, options: [.resetTracking, .removeExistingAnchors])
+        stopsController?.sessionDidRestart(usesGeoTracking: usesGeoTracking)
         model.signLost() // back to searching
+    }
+
+    /// Restarts the session with geo tracking, unless a sign is being tracked right now.
+    private func switchToGeoTracking() {
+        guard !usesGeoTracking, !geoTrackingFailed else { return }
+        guard sign == nil else {
+            pendingGeoSwitch = true
+            return
+        }
+        pendingGeoSwitch = false
+        usesGeoTracking = true
+        startSession()
+    }
+
+    private func fallBackToWorldTracking() {
+        guard usesGeoTracking else { return }
+        geoTrackingFailed = true
+        usesGeoTracking = false
+        startSession()
+    }
+
+    @objc private func handleTap(_ recognizer: UITapGestureRecognizer) {
+        guard let arView, let stopsController else { return }
+        let point = recognizer.location(in: arView)
+        for entity in arView.entities(at: point) {
+            if let stop = stopsController.stop(for: entity) {
+                model.selectedARStop = stop
+                return
+            }
+        }
     }
 
     func stop() {
@@ -111,7 +175,23 @@ final class ARCoordinator: NSObject, ARSessionDelegate {
     nonisolated func session(_ session: ARSession, didFailWithError error: Error) {
         let message = error.localizedDescription
         MainActor.assumeIsolated {
-            self.model.trackingStatus = .failed(message)
+            if self.usesGeoTracking {
+                self.fallBackToWorldTracking()
+            } else {
+                self.model.trackingStatus = .failed(message)
+            }
+        }
+    }
+
+    nonisolated func session(_ session: ARSession, didChange geoTrackingStatus: ARGeoTrackingStatus) {
+        MainActor.assumeIsolated {
+            guard self.usesGeoTracking else { return }
+            switch (geoTrackingStatus.state, geoTrackingStatus.stateReason) {
+            case (.notAvailable, .notAvailableAtLocation), (.notAvailable, .needLocationPermissions):
+                self.fallBackToWorldTracking()
+            default:
+                self.stopsController?.geoTrackingStatusChanged(geoTrackingStatus)
+            }
         }
     }
 
@@ -163,6 +243,7 @@ final class ARCoordinator: NSObject, ARSessionDelegate {
         // ARKit reuses the anchor when the same pictogram is found elsewhere: a big jump means a new sign.
         let position = anchor.transform.translation
         if let recognisedAt = sign.recognisedAt, simd_distance(position, recognisedAt) > newSignDistance {
+            stopsController?.signLost()
             sign.stopCode = nil
             sign.recognisedAt = nil
             sign.firstSeen = Date()
@@ -196,11 +277,15 @@ final class ARCoordinator: NSObject, ARSessionDelegate {
         sign?.anchorEntity.removeFromParent()
         sign = nil
         isReading = false
+        stopsController?.signLost()
     }
 
     // MARK: - Frames & OCR
 
     private func handleFrame(_ frame: ARFrame) {
+        stopsController?.update(frame: frame)
+        if pendingGeoSwitch, sign == nil { switchToGeoTracking() }
+
         guard let sign else { return }
         sign.panel.face(cameraPosition: frame.camera.transform.translation)
 
@@ -251,6 +336,7 @@ final class ARCoordinator: NSObject, ARSessionDelegate {
         sign.stopCode = accepted
         sign.recognisedAt = anchorPosition
         model.activate(stopCode: accepted)
+        stopsController?.signRecognised(stopCode: accepted, at: anchorPosition)
     }
 
     /// Projects a sign region into the camera image (pixel coordinates of `capturedImage`).

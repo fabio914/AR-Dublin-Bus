@@ -23,6 +23,14 @@ struct SettingsView: View {
                 }
 
                 Section {
+                    Toggle("Show nearby stops", isOn: Bindable(model).showsARStops)
+                } header: {
+                    Text("Camera view")
+                } footer: {
+                    Text("Labels float over the stops around you, placed with GPS and the compass, or with Apple's location anchors where available. Recognising a stop sign sharpens their positions. Tap a label to see its board.")
+                }
+
+                Section {
                     LabeledContent("Status", value: timetableStatus)
                     Button("Download latest timetable") {
                         model.refreshTimetable()

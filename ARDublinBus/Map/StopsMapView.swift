@@ -96,24 +96,7 @@ struct StopsMapView: View {
             if model == nil { model = StopsMapModel(service: appModel.service) }
         }
         .sheet(item: $selectedStop) { stop in
-            NavigationStack {
-                ScrollView {
-                    StopBoardView(stopCode: stop.code)
-                        .padding()
-                }
-                .background(Color(.systemGroupedBackground))
-                .navigationTitle(stop.name)
-                .navigationBarTitleDisplayMode(.inline)
-                .toolbar {
-                    ToolbarItem(placement: .confirmationAction) {
-                        Button("Done") { selectedStop = nil }
-                    }
-                }
-                .tripDestination()
-            }
-            .presentationDetents([.medium, .large])
-            // Keep the map usable behind the half-height board, so another stop can be picked.
-            .presentationBackgroundInteraction(.enabled(upThrough: .medium))
+            StopBoardSheet(stop: stop) { selectedStop = nil }
         }
     }
 }

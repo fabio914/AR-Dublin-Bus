@@ -37,8 +37,15 @@ final class DeparturesPanelEntity: Entity {
 
     /// Rotates the panel (in world space) so its front faces `cameraPosition`, keeping it upright.
     func face(cameraPosition: SIMD3<Float>) {
+        turnToFace(cameraPosition)
+    }
+}
+
+extension Entity {
+    /// Rotates the entity (in world space) so its front (+z) faces `point`, keeping it upright.
+    func turnToFace(_ point: SIMD3<Float>) {
         let position = position(relativeTo: nil)
-        var forward = cameraPosition - position
+        var forward = point - position
         guard simd_length(forward) > 0.001 else { return }
         forward = simd_normalize(forward)
 
@@ -49,7 +56,6 @@ final class DeparturesPanelEntity: Entity {
         right = simd_normalize(right)
         let up = simd_cross(forward, right)
 
-        let rotation = simd_quatf(simd_float3x3(columns: (right, up, forward)))
-        setOrientation(rotation, relativeTo: nil)
+        setOrientation(simd_quatf(simd_float3x3(columns: (right, up, forward))), relativeTo: nil)
     }
 }
