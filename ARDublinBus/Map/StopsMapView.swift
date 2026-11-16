@@ -14,6 +14,7 @@ final class StopsMapModel {
 
     @ObservationIgnored private let service: DepartureService
     @ObservationIgnored private var loadTask: Task<Void, Never>?
+    @ObservationIgnored private var lastRegion: MKCoordinateRegion?
 
     /// Above this latitude span (about 30 km), the map shows no stops.
     static let maximumSpan: CLLocationDegrees = 0.3
@@ -23,7 +24,13 @@ final class StopsMapModel {
         self.service = service
     }
 
+    /// Loads the visible area again, for example once the timetable has been downloaded.
+    func reload() {
+        if let lastRegion { visibleAreaChanged(lastRegion) }
+    }
+
     func visibleAreaChanged(_ region: MKCoordinateRegion) {
+        lastRegion = region
         loadTask?.cancel()
         guard region.span.latitudeDelta <= Self.maximumSpan else {
             stops = []
@@ -56,11 +63,14 @@ final class StopsMapModel {
 }
 
 /// Every bus stop on a map. Tapping a stop shows its board; tapping a bus there shows its line.
+/// The AR camera view is pushed from here.
 struct StopsMapView: View {
     @Environment(AppModel.self) private var appModel
-    @Environment(\.dismiss) private var dismiss
+    /// Switches to the Settings tab (the AR screen links there when no API key is set).
+    let openSettings: () -> Void
     @State private var model: StopsMapModel?
     @State private var selectedStop: GTFSStop?
+    @State private var showingAR = false
 
     var body: some View {
         NavigationStack {
@@ -74,29 +84,55 @@ struct StopsMapView: View {
                     )
                     .ignoresSafeArea(edges: .bottom)
 
-                    if let hint = model.hint {
-                        Text(hint)
-                            .font(.footnote.weight(.semibold))
-                            .padding(.horizontal, 14)
-                            .padding(.vertical, 8)
-                            .background(.regularMaterial, in: Capsule())
-                            .padding(.top, 8)
+                    VStack(spacing: 8) {
+                        TimetableBanner(phase: appModel.timetablePhase, retry: appModel.retryTimetable)
+                            .padding(.horizontal, 16)
+                        if let hint = model.hint, !isPreparingTimetable {
+                            Text(hint)
+                                .font(.footnote.weight(.semibold))
+                                .padding(.horizontal, 14)
+                                .padding(.vertical, 8)
+                                .background(.regularMaterial, in: Capsule())
+                        }
                     }
+                    .padding(.top, 8)
                 }
             }
             .navigationTitle("Bus stops")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Done") { dismiss() }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        // The board sheet would otherwise stay up over the camera.
+                        selectedStop = nil
+                        showingAR = true
+                    } label: {
+                        Label("AR", systemImage: "arkit")
+                            .labelStyle(.titleAndIcon)
+                    }
+                    .accessibilityLabel("AR camera view")
                 }
+            }
+            .navigationDestination(isPresented: $showingAR) {
+                ARScreen(openSettings: openSettings)
             }
         }
         .onAppear {
             if model == nil { model = StopsMapModel(service: appModel.service) }
         }
+        .onChange(of: appModel.timetablePhase) { _, phase in
+            // The first download finished (or a newer timetable arrived): show its stops.
+            if case .ready = phase { model?.reload() }
+        }
         .sheet(item: $selectedStop) { stop in
             StopBoardSheet(stop: stop) { selectedStop = nil }
+        }
+    }
+
+    private var isPreparingTimetable: Bool {
+        switch appModel.timetablePhase {
+        case .downloading, .extracting, .indexing, .failed: true
+        case .idle, .ready: false
         }
     }
 }

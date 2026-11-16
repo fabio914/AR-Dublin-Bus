@@ -1,10 +1,9 @@
 import SwiftUI
 
-/// Look up a stop by number or name without the camera — handy when a sign can't be read,
-/// and for trying the app in the Simulator. Matching stops are listed as you type.
+/// The Search tab: look up a stop by number or name without the camera — handy when a sign
+/// can't be read, and for trying the app in the Simulator. Matching stops are listed as you type.
 struct StopLookupView: View {
     @Environment(AppModel.self) private var model
-    @Environment(\.dismiss) private var dismiss
     @State private var input = ""
     @State private var results: [StopSearchResult] = []
     /// The query `results` are for (`nil` before the first search finishes).
@@ -57,17 +56,10 @@ struct StopLookupView: View {
             }
             .scrollDismissesKeyboard(.interactively)
             .background(Color(.systemGroupedBackground))
-            .navigationTitle("Look up a stop")
+            .navigationTitle("Search")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Done") { dismiss() }
-                }
-            }
             .tripDestination()
         }
-        // Ready to type as soon as the sheet opens.
-        .onAppear { isInputFocused = true }
         .onChange(of: input) { selectedCode = nil }
         .task(id: query) {
             guard !query.isEmpty else {
