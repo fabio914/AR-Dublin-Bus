@@ -21,6 +21,7 @@ struct ContentView: View {
                     .transition(.opacity)
             }
         }
+        .tint(Color.appTint)
         .task { await model.start() }
     }
 }
@@ -44,6 +45,5 @@ private struct MainTabs: View {
                 SettingsView()
             }
         }
-        .tint(TFIColors.green)
     }
 }

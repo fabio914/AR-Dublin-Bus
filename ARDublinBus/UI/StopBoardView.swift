@@ -39,7 +39,7 @@ struct StopBoardSheet: View {
                 StopBoardView(stopCode: stop.code)
                     .padding()
             }
-            .background(Color(.systemGroupedBackground))
+            .background(Color.appBackground)
             .navigationTitle(stop.name)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

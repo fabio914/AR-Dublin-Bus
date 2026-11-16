@@ -118,7 +118,7 @@ struct NearbyStopsView: View {
                     StopBoardView(stopCode: stop.stop.code)
                         .padding()
                 }
-                .background(Color(.systemGroupedBackground))
+                .background(Color.appBackground)
                 .navigationTitle("Stop \(stop.stop.code)")
                 .navigationBarTitleDisplayMode(.inline)
             }
@@ -200,7 +200,7 @@ struct NearbyStopsView: View {
             .padding(.horizontal, 16)
             .padding(.bottom, 24)
         }
-        .background(Color(.systemGroupedBackground))
+        .background(Color.appBackground)
         .refreshable { runID = UUID() }
     }
 }

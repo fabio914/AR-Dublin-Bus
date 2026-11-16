@@ -24,6 +24,7 @@ struct SettingsView: View {
                 } footer: {
                     Text("Live arrivals come from the National Transport Authority's GTFS-Realtime API. Register for a free key at developer.nationaltransport.ie and subscribe to the GTFS-R product. Without a key, scheduled times are shown.")
                 }
+                .listRowBackground(Color.appCard)
 
                 Section {
                     Toggle("Show nearby stops", isOn: Bindable(model).showsARStops)
@@ -32,6 +33,7 @@ struct SettingsView: View {
                 } footer: {
                     Text("Labels float over the stops around you, placed with GPS and the compass, or with Apple's location anchors where available. Recognising a stop sign sharpens their positions. Tap a label to see its board.")
                 }
+                .listRowBackground(Color.appCard)
 
                 Section {
                     LabeledContent("Status", value: timetableStatus)
@@ -44,7 +46,12 @@ struct SettingsView: View {
                 } footer: {
                     Text("The Dublin Bus GTFS schedule from transportforireland.ie (about 40 MB). It refreshes automatically every few days.")
                 }
+                .listRowBackground(Color.appCard)
             }
+            .scrollContentBackground(.hidden)
+            .background(Color.appBackground)
+            // Room between the last footer and the tab bar.
+            .contentMargins(.bottom, 32, for: .scrollContent)
             .navigationTitle("Settings")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

@@ -82,7 +82,8 @@ struct StopsMapView: View {
                         onVisibleAreaChange: { model.visibleAreaChanged($0) },
                         onSelectStop: { selectedStop = $0 }
                     )
-                    .ignoresSafeArea(edges: .bottom)
+                    // Under the navigation bar and the tab bar.
+                    .ignoresSafeArea()
 
                     VStack(spacing: 8) {
                         TimetableBanner(phase: appModel.timetablePhase, retry: appModel.retryTimetable)

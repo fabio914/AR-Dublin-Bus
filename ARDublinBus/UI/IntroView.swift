@@ -27,7 +27,7 @@ struct IntroView: View {
         }
         .scrollDismissesKeyboard(.interactively)
         .scrollBounceBehavior(.basedOnSize)
-        .background(Color(.systemGroupedBackground))
+        .background(Color.appBackground)
         .safeAreaInset(edge: .bottom) {
             if needsAPIKey { continueButton }
         }
@@ -61,7 +61,7 @@ struct IntroView: View {
     private var timetableCard: some View {
         card {
             if model.isTimetableLoaded {
-                step(icon: "checkmark.circle.fill", tint: TFIColors.green, title: "Timetable ready")
+                step(icon: "checkmark.circle.fill", tint: .appTint, title: "Timetable ready")
             } else if let error = model.timetableLoadError {
                 step(icon: "exclamationmark.triangle.fill", tint: .orange, title: "Couldn't get the timetable", detail: error)
                 Button("Try again", action: model.retryTimetable)
@@ -72,12 +72,12 @@ struct IntroView: View {
                 switch model.timetablePhase {
                 case .downloading(let progress):
                     step(
-                        icon: "arrow.down.circle.fill", tint: TFIColors.green,
+                        icon: "arrow.down.circle.fill", tint: .appTint,
                         title: "Downloading the timetable",
                         detail: "The Dublin Bus schedule is about 40 MB. This only happens once; later updates happen in the background."
                     )
                     ProgressView(value: progress)
-                        .tint(TFIColors.green)
+                        .tint(Color.appTint)
                 case .extracting:
                     working("Preparing the timetable…", detail: "Unpacking the schedule.")
                 case .indexing:
@@ -103,7 +103,7 @@ struct IntroView: View {
     private var apiKeyCard: some View {
         card {
             step(
-                icon: "key.fill", tint: TFIColors.green,
+                icon: "key.fill", tint: .appTint,
                 title: "Live arrivals (optional)",
                 detail: "Live times come from the National Transport Authority's GTFS-Realtime API. Register for a free key at developer.nationaltransport.ie and subscribe to the GTFS-R product. Without a key, scheduled times are shown. You can add one later in Settings."
             )
@@ -113,7 +113,7 @@ struct IntroView: View {
                 .focused($isKeyFocused)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 10)
-                .background(Color(.tertiarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .background(Color.appField, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
         }
     }
 
@@ -149,7 +149,7 @@ struct IntroView: View {
         VStack(alignment: .leading, spacing: 14, content: content)
             .padding(16)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .background(Color.appCard, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
     }
 
     private func step(icon: String, tint: Color, title: String, detail: String? = nil) -> some View {

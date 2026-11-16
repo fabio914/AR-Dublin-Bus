@@ -43,7 +43,7 @@ struct StopLookupView: View {
                         }
                         .padding(.horizontal, 10)
                         .padding(.vertical, 8)
-                        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                        .background(Color.appCard, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
 
                         Button("Show", action: show)
                             .buttonStyle(.borderedProminent)
@@ -55,7 +55,7 @@ struct StopLookupView: View {
                 .padding()
             }
             .scrollDismissesKeyboard(.interactively)
-            .background(Color(.systemGroupedBackground))
+            .background(Color.appBackground)
             .navigationTitle("Search")
             .navigationBarTitleDisplayMode(.inline)
             .tripDestination()
@@ -87,7 +87,7 @@ struct StopLookupView: View {
                         .font(.subheadline.weight(.semibold))
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                .tint(TFIColors.green)
+                .tint(Color.appTint)
             }
             StopBoardView(stopCode: selectedCode)
         } else if query.isEmpty {
