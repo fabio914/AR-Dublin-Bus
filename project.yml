@@ -32,6 +32,8 @@ targets:
       path: ARDublinBus/Info.plist
       properties:
         CFBundleDisplayName: Bus AR
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         NSCameraUsageDescription: The camera is used to find Dublin bus stop signs and read their stop numbers.
         NSLocationWhenInUseUsageDescription: Your location is used to find the bus stops nearest to you.
         UIRequiredDeviceCapabilities: [arkit]
@@ -56,6 +58,8 @@ targets:
       path: ARDublinBusWatch/Info.plist
       properties:
         CFBundleDisplayName: Dublin Bus
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         WKApplication: true
         WKCompanionAppBundleIdentifier: $(APP_BUNDLE_IDENTIFIER)
         NSLocationWhenInUseUsageDescription: Your location is used to find the bus stops nearest to you.

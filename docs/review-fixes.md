@@ -19,7 +19,7 @@ Each fix is one commit on the `review-fixes` branch.
   and a failed refresh is invisible while an older answer is on screen.
 - [x] **6. Duplicate departure IDs on loop routes.** A trip calling twice at the same stop
   produces two rows with the same ID.
-- [ ] **7. Build number setting is ignored.** `CURRENT_PROJECT_VERSION` and
+- [x] **7. Build number setting is ignored.** `CURRENT_PROJECT_VERSION` and
   `MARKETING_VERSION` in `project.yml` don't reach the Info.plists.
 
 ## AR session
