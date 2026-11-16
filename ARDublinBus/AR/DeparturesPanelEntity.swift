@@ -17,7 +17,8 @@ final class DeparturesPanelEntity: Entity {
     }
 
     func render(_ content: PanelContent, now: Date = .now) {
-        let renderer = ImageRenderer(content: DeparturesPanelView(content: content, now: now))
+        // Always light in AR: a white card reads best over the camera image.
+        let renderer = ImageRenderer(content: DeparturesPanelView(content: content, now: now).environment(\.colorScheme, .light))
         renderer.scale = 3
         renderer.isOpaque = false
         guard let image = renderer.cgImage,

@@ -46,13 +46,16 @@ actor DepartureService {
         Set(try await timetableStore.loadedTimetable().stopsByCode.keys)
     }
 
-    func board(forStopCode code: String, now: Date = .now) async throws -> StopBoard {
-        try await boards(forStopCodes: [code], now: now)[0]
+    /// - Parameter limit: the most departures to include, instead of the usual number.
+    func board(forStopCode code: String, limit: Int? = nil, now: Date = .now) async throws -> StopBoard {
+        try await boards(forStopCodes: [code], limit: limit, now: now)[0]
     }
 
     /// Boards for several stops, sharing one realtime snapshot.
     /// Results are in the order of `codes`.
-    func boards(forStopCodes codes: [String], now: Date = .now) async throws -> [StopBoard] {
+    func boards(forStopCodes codes: [String], limit: Int? = nil, now: Date = .now) async throws -> [StopBoard] {
+        var calculator = self.calculator
+        if let limit { calculator.limit = limit }
         let timetable = try await timetableStore.loadedTimetable()
         var stopsByCode: [String: [GTFSStop]] = [:]
         for code in codes {
@@ -129,6 +132,18 @@ actor DepartureService {
                 .map(\.stop)
             return try timetable.withRoutes(nearest).map { ARStop(stop: $0.stop, routes: $0.routes) }
         }.value
+    }
+
+    /// Every route leaving a stop, with its paths from there (see `StaticTimetable.lines(atStopCode:)`).
+    func lines(atStopCode code: String) async throws -> StopLines {
+        let timetable = try await timetableStore.loadedTimetable()
+        guard let stops = timetable.stopsByCode[code], let stop = stops.first(where: { $0.coordinate != nil }) ?? stops.first else {
+            throw DepartureServiceError.unknownStop(code)
+        }
+        let lines = try await Task.detached(priority: .userInitiated) {
+            try timetable.lines(atStopCode: code)
+        }.value
+        return StopLines(stop: stop, lines: lines)
     }
 
     /// A trip's stops, shape and live times, for the line screen.

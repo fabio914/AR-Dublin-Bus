@@ -53,7 +53,7 @@ struct StopSummaryCard<Destination: Hashable>: View {
                     Image(systemName: "chevron.right")
                 }
                 .font(.system(size: 15, weight: .semibold))
-                .foregroundStyle(TFIColors.green)
+                .foregroundStyle(Color.appTint)
                 .padding(.horizontal, PanelMetrics.horizontalPadding)
                 .padding(.vertical, 12)
                 .background(PanelMetrics.footerBackground)

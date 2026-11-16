@@ -161,12 +161,12 @@ private struct TripStopRow: View {
             VStack(alignment: .leading, spacing: 1) {
                 Text(stop.stop.name)
                     .font(.system(size: 16, weight: isOrigin ? .bold : .medium))
-                    .foregroundStyle(stop.hasPassed ? TFIColors.secondaryInk : TFIColors.ink)
+                    .foregroundStyle(stop.hasPassed ? Color.cardSecondaryInk : Color.cardInk)
                     .strikethrough(stop.isCancelled)
                     .lineLimit(2)
                 Text("Stop \(stop.stop.code)")
                     .font(.system(size: 13))
-                    .foregroundStyle(TFIColors.secondaryInk)
+                    .foregroundStyle(Color.cardSecondaryInk)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.vertical, 8)
@@ -179,7 +179,7 @@ private struct TripStopRow: View {
 
     /// A vertical line through every stop, grey where the bus has already been.
     private var timeline: some View {
-        let colour = stop.hasPassed ? Color.gray.opacity(0.5) : TFIColors.green
+        let colour = stop.hasPassed ? Color.gray.opacity(0.5) : Color.appTint
         return ZStack {
             VStack(spacing: 0) {
                 Rectangle().fill(isFirst ? .clear : colour).frame(width: 4)
@@ -204,11 +204,11 @@ private struct TripStopRow: View {
                 if stop.isRealtime && !stop.hasPassed {
                     Image(systemName: "dot.radiowaves.up.forward")
                         .font(.system(size: 10, weight: .bold))
-                        .foregroundStyle(TFIColors.live)
+                        .foregroundStyle(Color.cardLive)
                 }
                 Text(ETAText.clock(stop.expected))
                     .font(.system(size: 15, weight: stop.isRealtime ? .bold : .semibold, design: .rounded))
-                    .foregroundStyle(stop.hasPassed || !stop.isRealtime ? TFIColors.secondaryInk : TFIColors.ink)
+                    .foregroundStyle(stop.hasPassed || !stop.isRealtime ? Color.cardSecondaryInk : Color.cardInk)
                     .monospacedDigit()
             }
         }
