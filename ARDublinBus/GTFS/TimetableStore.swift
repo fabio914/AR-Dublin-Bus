@@ -143,8 +143,11 @@ actor TimetableStore {
 
         report(.extracting)
         let directory = self.directory
-        let staging = directory.deletingLastPathComponent()
-            .appendingPathComponent("GTFS-staging-\(UUID().uuidString)", isDirectory: true)
+        // The CSV files are large (about 260 MB). They're extracted into the temporary folder,
+        // which iOS empties by itself, and anything an interrupted build left behind is removed.
+        Self.removeLeftoverStagingFolders(in: [Self.stagingParent, directory.deletingLastPathComponent()])
+        let staging = Self.stagingParent
+            .appendingPathComponent(Self.stagingPrefix + UUID().uuidString, isDirectory: true)
         defer { try? FileManager.default.removeItem(at: staging) }
 
         try await Task.detached(priority: .userInitiated) {
@@ -156,6 +159,21 @@ actor TimetableStore {
             try Self.buildDatabase(in: staging)
             try Self.install(staging, at: directory)
         }.value
+    }
+
+    static let stagingPrefix = "GTFS-staging-"
+    static var stagingParent: URL { FileManager.default.temporaryDirectory }
+
+    /// Deletes staging folders left by builds that never finished (the app was killed, say).
+    /// Earlier versions kept them next to the timetable, in Application Support.
+    static func removeLeftoverStagingFolders(in parents: [URL]) {
+        let fileManager = FileManager.default
+        for parent in parents {
+            let contents = (try? fileManager.contentsOfDirectory(at: parent, includingPropertiesForKeys: nil)) ?? []
+            for url in contents where url.lastPathComponent.hasPrefix(stagingPrefix) {
+                try? fileManager.removeItem(at: url)
+            }
+        }
     }
 
     /// Extracts only the files the timetable needs into `staging`.

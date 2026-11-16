@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+import ZIPFoundation
 @testable import ARDublinBus
 
 /// Collects the phases a `TimetableStore` reports.
@@ -49,6 +50,16 @@ extension GTFSFixture {
 
     /// A feed URL that can't be downloaded.
     var missingFeedURL: URL { directory.appendingPathComponent("no-such-feed.zip") }
+
+    /// Zips the feed's CSV files, as the NTA publishes them.
+    func makeFeedArchive() throws -> URL {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("feed-\(UUID().uuidString).zip")
+        let archive = try Archive(url: url, accessMode: .create)
+        for file in try FileManager.default.contentsOfDirectory(atPath: directory.path) where file.hasSuffix(".txt") {
+            try archive.addEntry(with: file, relativeTo: directory)
+        }
+        return url
+    }
 }
 
 struct TimetableStoreTests {
@@ -70,6 +81,42 @@ struct TimetableStoreTests {
         }
         #expect(phases.contains(where: { $0.isDownloading }))
         #expect(phases.last?.isReady == true)
+    }
+
+    @Test func downloadsBuildsAndInstallsTheFeed() async throws {
+        let feed = try GTFSFixture().makeFeedArchive()
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("store-\(UUID().uuidString)", isDirectory: true)
+            .appendingPathComponent("GTFS", isDirectory: true)
+        let store = TimetableStore(feedURL: feed, directory: directory)
+        let recorder = PhaseRecorder()
+        await store.setPhaseHandler { recorder.record($0) }
+
+        let timetable = try await store.loadedTimetable()
+        #expect(timetable.stopsByCode["271"] != nil)
+        #expect(recorder.phases.last?.isReady == true)
+        // Only the database and its download date are kept.
+        let installed = try FileManager.default.contentsOfDirectory(atPath: directory.path).sorted()
+        #expect(installed == [TimetableStore.metadataFileName, TimetableStore.databaseFileName].sorted())
+
+        // A manual refresh replaces it and keeps working.
+        let refreshed = try await store.refresh()
+        #expect(refreshed.stopsByCode["271"] != nil)
+        #expect(try refreshed.calls(atStopIDs: [GTFSFixture.stopID]).isEmpty == false)
+    }
+
+    @Test func removesLeftoverStagingFolders() throws {
+        let fileManager = FileManager.default
+        let parent = fileManager.temporaryDirectory.appendingPathComponent("staging-test-\(UUID().uuidString)", isDirectory: true)
+        let leftover = parent.appendingPathComponent(TimetableStore.stagingPrefix + "ABC", isDirectory: true)
+        let timetable = parent.appendingPathComponent("GTFS", isDirectory: true)
+        try fileManager.createDirectory(at: leftover, withIntermediateDirectories: true)
+        try fileManager.createDirectory(at: timetable, withIntermediateDirectories: true)
+        try "x".write(to: leftover.appendingPathComponent("stop_times.txt"), atomically: true, encoding: .utf8)
+
+        TimetableStore.removeLeftoverStagingFolders(in: [parent])
+        #expect(!fileManager.fileExists(atPath: leftover.path))
+        #expect(fileManager.fileExists(atPath: timetable.path))
     }
 
     @Test func freshTimetableIsNotRefreshed() async throws {

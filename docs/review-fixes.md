@@ -13,7 +13,7 @@ Each fix is one commit on the `review-fixes` branch.
   footer says "Live · updated" with the current time instead of the feed's time.
 - [x] **3. Boards list buses that terminate at the stop.** A trip's final call is an arrival
   only; nobody can board it. (`StaticTimetable.calls`)
-- [ ] **4. Orphaned staging folders.** If the app is killed while the timetable is being
+- [x] **4. Orphaned staging folders.** If the app is killed while the timetable is being
   prepared, about 260 MB of CSV files stay in Application Support (and in backups) forever.
 - [ ] **5. Watch shows departed buses and hides failures.** Past departures stay at "Due",
   and a failed refresh is invisible while an older answer is on screen.
