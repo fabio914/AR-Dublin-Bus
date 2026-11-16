@@ -35,7 +35,7 @@ Each fix is one commit on the `review-fixes` branch.
 
 - [x] **10. Don't re-download an unchanged timetable.** Compare the feed's `ETag` before
   fetching 40 MB every three days, and skip the background refresh in Low Data Mode.
-- [ ] **11. Settings "Save" bypasses the realtime throttle.** Saving without changing the key
+- [x] **11. Settings "Save" bypasses the realtime throttle.** Saving without changing the key
   still clears the cache and refetches the feed.
 - [ ] **12. Board query loads every call at the stop.** Restrict it to the time window in SQL.
 - [ ] **13. Route badges run a join per stop.** Store each stop's routes in a `stop_routes`
