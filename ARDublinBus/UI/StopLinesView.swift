@@ -122,25 +122,52 @@ struct StopLinesMap: View {
     }
 }
 
-/// Every line leaving the stop, whether or not a bus is due, with its colour on the map and
-/// its next bus. Tapping a line shows it alone on the map.
+/// Every line leaving the stop, whether or not a bus is due: a map of where each goes, then
+/// the lines in the map's colours with their next bus. Tapping a line shows it alone on the map.
 struct StopLinesCard: View {
-    let lines: [StopLine]
-    let colours: [String: LineColour]
+    /// `nil` while loading.
+    let overview: StopLines?
+    let error: String?
     /// For each line's next bus; `nil` while loading.
     let board: StopBoard?
     let now: Date
     @Binding var selectedLineID: String?
 
+    static let mapHeight: CGFloat = 240
+
     var body: some View {
-        PanelCard(
-            title: "Lines",
-            subtitle: "\(lines.count) route\(lines.count == 1 ? "" : "s") from this stop",
-            icon: "point.topleft.down.to.point.bottomright.curvepath.fill"
-        ) {
-            if lines.isEmpty {
-                PanelMessage(icon: "moon.zzz.fill", title: "No routes leave from this stop")
+        PanelCard(title: "Lines", subtitle: subtitle, icon: "point.topleft.down.to.point.bottomright.curvepath.fill") {
+            if let overview {
+                let colours = LineColour.colours(for: overview.lines)
+                if overview.lines.isEmpty {
+                    PanelMessage(icon: "moon.zzz.fill", title: "No routes leave from this stop")
+                } else {
+                    StopLinesMap(overview: overview, colours: colours, selectedLineID: selectedLineID)
+                        .frame(height: Self.mapHeight)
+                    lineRows(overview.lines, colours: colours)
+                    PanelFooter {
+                        Image(systemName: "hand.tap")
+                        Text(selectedLineID == nil ? "Tap a line to show it alone on the map" : "Tap it again to show every line")
+                    }
+                }
+            } else if let error {
+                PanelMessage(icon: "exclamationmark.triangle.fill", title: "Couldn't load the lines", detail: error)
+            } else {
+                ProgressView()
+                    .frame(height: Self.mapHeight)
+                    .frame(maxWidth: .infinity)
             }
+        }
+        .shadow(color: .black.opacity(0.12), radius: 10, y: 3)
+    }
+
+    private var subtitle: String? {
+        guard let count = overview?.lines.count else { return nil }
+        return "\(count) route\(count == 1 ? "" : "s") from this stop"
+    }
+
+    private func lineRows(_ lines: [StopLine], colours: [String: LineColour]) -> some View {
+        VStack(spacing: 0) {
             ForEach(Array(lines.enumerated()), id: \.element.id) { index, line in
                 if index > 0 { PanelSeparator() }
                 Button {
@@ -156,14 +183,7 @@ struct StopLinesCard: View {
                 }
                 .buttonStyle(.plain)
             }
-            if !lines.isEmpty {
-                PanelFooter {
-                    Image(systemName: "hand.tap")
-                    Text(selectedLineID == nil ? "Tap a line to show it alone on the map" : "Tap it again to show every line")
-                }
-            }
         }
-        .shadow(color: .black.opacity(0.12), radius: 10, y: 3)
     }
 
     private func nextBusText(for line: StopLine) -> String? {

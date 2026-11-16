@@ -49,9 +49,9 @@ struct StopBoardView: View {
     }
 }
 
-/// A stop as a screen pushed onto a `NavigationStack` that uses `tripDestination()`: a map
-/// of where every line goes from the stop, its board, and all its lines in the map's colours.
-struct StopBoardScreen: View {
+/// A stop's board followed by all its lines, with a map of where each one goes. Loads both and
+/// keeps the board fresh. Use inside a `NavigationStack` that uses `tripDestination()`.
+struct StopDetailsView: View {
     @Environment(AppModel.self) private var model
     let stopCode: String
     @State private var overview: StopLines?
@@ -63,30 +63,18 @@ struct StopBoardScreen: View {
     static let departureLimit = 200
 
     var body: some View {
-        VStack(spacing: 0) {
-            map
-                .frame(height: 260)
-            ScrollView {
-                VStack(spacing: 16) {
-                    StopBoardView(stopCode: stopCode, departureLimit: Self.departureLimit) { board = $0 }
-                    if let overview {
-                        TimelineView(.periodic(from: .now, by: 20)) { context in
-                            StopLinesCard(
-                                lines: overview.lines,
-                                colours: colours,
-                                board: board,
-                                now: context.date,
-                                selectedLineID: $selectedLineID
-                            )
-                        }
-                    }
-                }
-                .padding()
+        VStack(spacing: 16) {
+            StopBoardView(stopCode: stopCode, departureLimit: Self.departureLimit) { board = $0 }
+            TimelineView(.periodic(from: .now, by: 20)) { context in
+                StopLinesCard(
+                    overview: overview,
+                    error: linesError,
+                    board: board,
+                    now: context.date,
+                    selectedLineID: $selectedLineID
+                )
             }
         }
-        .background(Color.appBackground)
-        .navigationTitle("Stop \(stopCode)")
-        .navigationBarTitleDisplayMode(.inline)
         .task(id: stopCode) {
             do {
                 overview = try await model.service.lines(atStopCode: stopCode)
@@ -95,33 +83,25 @@ struct StopBoardScreen: View {
             }
         }
     }
+}
 
-    @ViewBuilder
-    private var map: some View {
-        if let overview {
-            StopLinesMap(overview: overview, colours: colours, selectedLineID: selectedLineID)
-        } else {
-            ZStack {
-                Color.appCard
-                if let linesError {
-                    Label(linesError, systemImage: "exclamationmark.triangle")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                        .padding()
-                } else {
-                    ProgressView("Loading the lines…")
-                }
-            }
+/// A stop as a screen pushed onto a `NavigationStack` that uses `tripDestination()`.
+struct StopBoardScreen: View {
+    let stopCode: String
+
+    var body: some View {
+        ScrollView {
+            StopDetailsView(stopCode: stopCode)
+                .padding()
         }
-    }
-
-    private var colours: [String: LineColour] {
-        LineColour.colours(for: overview?.lines ?? [])
+        .background(Color.appBackground)
+        .navigationTitle("Stop \(stopCode)")
+        .navigationBarTitleDisplayMode(.inline)
     }
 }
 
-/// A stop's board in a sheet over another screen (the map, or the AR view), with its own
-/// navigation so buses can open their line.
+/// A stop's board and lines in a sheet over another screen (the map, or the AR view), with its
+/// own navigation so buses can open their line.
 struct StopBoardSheet: View {
     let stop: GTFSStop
     let done: () -> Void
@@ -129,7 +109,7 @@ struct StopBoardSheet: View {
     var body: some View {
         NavigationStack {
             ScrollView {
-                StopBoardView(stopCode: stop.code)
+                StopDetailsView(stopCode: stop.code)
                     .padding()
             }
             .background(Color.appBackground)
