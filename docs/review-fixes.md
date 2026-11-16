@@ -51,8 +51,9 @@ Each fix is one commit on the `review-fixes` branch.
   (Obscurity, not security: a determined person can still recover it.)
 - [x] **16. Share duplicated code with the watch app.** Colours, ETA text and the distance
   formatter exist twice.
-- [ ] **17. Remove unused code.** `StopBoard.hasLiveData`, `RealtimeSnapshot.tripCount`
-  (tests only), `GeoAlignment.coordinate(of:)` (tests only).
+- [x] **17. Remove unused code.** `StopBoard.hasLiveData` is gone (and `trips.direction`, with
+  item 13). `RealtimeSnapshot.tripCount` and `GeoAlignment.coordinate(of:)` stay: the tests
+  use them.
 
 ## Later
 

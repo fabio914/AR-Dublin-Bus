@@ -15,8 +15,6 @@ struct StopBoard: Equatable, Sendable {
 
     /// The time to show as "updated": the live feed's when there is one.
     var updatedAt: Date { realtimeTimestamp ?? generatedAt }
-
-    var hasLiveData: Bool { realtimeIssue == nil && realtimeTimestamp != nil }
 }
 
 enum DepartureServiceError: LocalizedError, Equatable {
