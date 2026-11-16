@@ -8,7 +8,7 @@ import Testing
 @MainActor
 struct PanelRenderingTests {
     private func render(_ content: PanelContent, now: Date, name: String) throws -> CGImage {
-        let renderer = ImageRenderer(content: DeparturesPanelView(content: content, now: now))
+        let renderer = ImageRenderer(content: DeparturesPanelView(content: content, now: now).environment(\.colorScheme, .light))
         renderer.scale = 3
         renderer.isOpaque = false
         let image = try #require(renderer.cgImage)

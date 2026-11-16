@@ -9,7 +9,7 @@ struct LineColour {
     let text: Color
 
     static let saturation = 0.8
-    static let brightness = 0.95
+    static let brightness = 0.8
 
     init(index: Int, count: Int) {
         let hue = Double(index) / Double(max(count, 1))
@@ -49,8 +49,8 @@ struct LineColour {
     }
 }
 
-/// Where every line goes from the stop, each in its own colour. With a line selected, the
-/// others fade and the map zooms to it.
+/// Where every line goes from the stop, each in its own colour. With a line selected, only
+/// that line is shown and the map zooms to it.
 struct StopLinesMap: View {
     let overview: StopLines
     let colours: [String: LineColour]
@@ -66,15 +66,11 @@ struct StopLinesMap: View {
 
     var body: some View {
         Map(position: $position) {
-            // The selected line is drawn last, so it's on top.
-            ForEach(drawingOrder) { line in
-                let isSelected = line.id == selectedLineID
-                let isDimmed = selectedLineID != nil && !isSelected
+            ForEach(visibleLines) { line in
                 let colour = colours[line.id]?.fill ?? Color.appTint
                 ForEach(Array(line.paths.enumerated()), id: \.offset) { _, path in
                     MapPolyline(coordinates: path)
-                        .stroke(colour.opacity(isDimmed ? 0.18 : 1),
-                                style: StrokeStyle(lineWidth: isSelected ? 6 : 4, lineCap: .round, lineJoin: .round))
+                        .stroke(colour, style: StrokeStyle(lineWidth: selectedLineID == nil ? 4 : 6, lineCap: .round, lineJoin: .round))
                 }
             }
 
@@ -106,8 +102,10 @@ struct StopLinesMap: View {
         }
     }
 
-    private var drawingOrder: [StopLine] {
-        overview.lines.filter { $0.id != selectedLineID } + overview.lines.filter { $0.id == selectedLineID }
+    /// Every line, or only the selected one.
+    private var visibleLines: [StopLine] {
+        guard let selectedLineID else { return overview.lines }
+        return overview.lines.filter { $0.id == selectedLineID }
     }
 
     /// Every path of `lines` and the stop, with some padding.
@@ -218,12 +216,12 @@ private struct StopLineRow: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(destinations)
                     .font(.system(size: 16, weight: .medium))
-                    .foregroundStyle(TFIColors.ink)
+                    .foregroundStyle(Color.cardInk)
                     .lineLimit(2)
                 if let nextBus {
                     Text(nextBus)
                         .font(.system(size: 13))
-                        .foregroundStyle(TFIColors.secondaryInk)
+                        .foregroundStyle(Color.cardSecondaryInk)
                         .lineLimit(1)
                 }
             }
@@ -231,7 +229,7 @@ private struct StopLineRow: View {
 
             Image(systemName: isSelected ? "eye.fill" : "eye")
                 .font(.system(size: 15, weight: .semibold))
-                .foregroundStyle(isSelected ? TFIColors.green : TFIColors.secondaryInk.opacity(0.6))
+                .foregroundStyle(isSelected ? Color.appTint : Color.cardSecondaryInk.opacity(0.6))
         }
         .padding(.horizontal, PanelMetrics.horizontalPadding)
         .padding(.vertical, 9)

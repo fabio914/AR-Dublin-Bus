@@ -1,7 +1,8 @@
 import SwiftUI
 
-/// The card style shared by the AR panel and the in-app boards: a TFI-green header
-/// over a white body. Always light, so it reads the same in dark mode and in AR.
+/// The card style shared by the AR panel and the in-app boards: a TFI-green header over a
+/// card body. The body follows light and dark mode (see the `card…` colours); the AR panel
+/// is rendered in light mode.
 struct PanelCard<Content: View>: View {
     let title: String
     var subtitle: String?
@@ -16,16 +17,15 @@ struct PanelCard<Content: View>: View {
             content
         }
         .frame(maxWidth: .infinity)
-        .background(Color.white)
+        .background(Color.appCard)
         .clipShape(RoundedRectangle(cornerRadius: PanelMetrics.cornerRadius, style: .continuous))
-        .environment(\.colorScheme, .light)
     }
 }
 
 enum PanelMetrics {
     static let cornerRadius: CGFloat = 24
     static let horizontalPadding: CGFloat = 16
-    static let footerBackground = Color(red: 0.96, green: 0.97, blue: 0.97)
+    static let footerBackground = Color.cardFooter
 }
 
 struct PanelHeader: View {
@@ -99,7 +99,7 @@ struct PanelHeader: View {
 struct PanelSeparator: View {
     var body: some View {
         Rectangle()
-            .fill(TFIColors.separator)
+            .fill(Color.cardSeparator)
             .frame(height: 1)
             .padding(.leading, PanelMetrics.horizontalPadding)
     }
@@ -115,7 +115,7 @@ struct PanelFooter<Content: View>: View {
             Spacer(minLength: 0)
         }
         .font(.system(size: 12, weight: .medium))
-        .foregroundStyle(TFIColors.secondaryInk)
+        .foregroundStyle(Color.cardSecondaryInk)
         .padding(.horizontal, PanelMetrics.horizontalPadding)
         .padding(.vertical, 10)
         .frame(maxWidth: .infinity)
@@ -133,15 +133,15 @@ struct PanelMessage: View {
         VStack(spacing: 8) {
             Image(systemName: icon)
                 .font(.system(size: 28, weight: .semibold))
-                .foregroundStyle(TFIColors.green)
+                .foregroundStyle(Color.appTint)
             Text(title)
                 .font(.system(size: 17, weight: .semibold))
-                .foregroundStyle(TFIColors.ink)
+                .foregroundStyle(Color.cardInk)
                 .multilineTextAlignment(.center)
             if let detail {
                 Text(detail)
                     .font(.system(size: 14))
-                    .foregroundStyle(TFIColors.secondaryInk)
+                    .foregroundStyle(Color.cardSecondaryInk)
                     .multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true)
             }

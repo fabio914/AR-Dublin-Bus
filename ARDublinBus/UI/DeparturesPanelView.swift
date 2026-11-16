@@ -82,7 +82,7 @@ struct RealtimeStatusLabel: View {
                 .lineLimit(2)
         } else {
             Image(systemName: "dot.radiowaves.left.and.right")
-                .foregroundStyle(TFIColors.live)
+                .foregroundStyle(Color.cardLive)
             Text("Live · updated \(updatedAt.formatted(ETAText.clockFormat))")
         }
     }
@@ -109,13 +109,13 @@ struct DepartureRow: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(departure.destination.isEmpty ? " " : departure.destination)
                     .font(.system(size: 16, weight: .medium))
-                    .foregroundStyle(departure.isCancelled ? TFIColors.secondaryInk : TFIColors.ink)
+                    .foregroundStyle(departure.isCancelled ? Color.cardSecondaryInk : Color.cardInk)
                     .strikethrough(departure.isCancelled)
                     .lineLimit(1)
                 if let detail {
                     Text(detail)
                         .font(.system(size: 13))
-                        .foregroundStyle(TFIColors.secondaryInk)
+                        .foregroundStyle(Color.cardSecondaryInk)
                         .lineLimit(1)
                 }
             }
@@ -126,7 +126,7 @@ struct DepartureRow: View {
             if showsChevron {
                 Image(systemName: "chevron.right")
                     .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(TFIColors.secondaryInk.opacity(0.7))
+                    .foregroundStyle(Color.cardSecondaryInk.opacity(0.7))
             }
         }
         .padding(.horizontal, 16)
@@ -143,16 +143,16 @@ struct DepartureRow: View {
             HStack(spacing: 4) {
                 Image(systemName: "dot.radiowaves.up.forward")
                     .font(.system(size: 11, weight: .bold))
-                    .foregroundStyle(TFIColors.live)
+                    .foregroundStyle(Color.cardLive)
                 Text(ETAText.relative(departure, now: now))
                     .font(.system(size: 18, weight: .bold, design: .rounded))
-                    .foregroundStyle(TFIColors.ink)
+                    .foregroundStyle(Color.cardInk)
                     .monospacedDigit()
             }
         } else {
             Text(ETAText.clock(departure.expected))
                 .font(.system(size: 17, weight: .semibold, design: .rounded))
-                .foregroundStyle(TFIColors.secondaryInk)
+                .foregroundStyle(Color.cardSecondaryInk)
                 .monospacedDigit()
         }
     }

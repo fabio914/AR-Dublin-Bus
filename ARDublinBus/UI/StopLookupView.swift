@@ -224,9 +224,8 @@ private struct StopResultsCard: View {
             }
         }
         .padding(.vertical, 4)
-        .background(Color.white)
+        .background(Color.appCard)
         .clipShape(RoundedRectangle(cornerRadius: PanelMetrics.cornerRadius, style: .continuous))
-        .environment(\.colorScheme, .light)
         .shadow(color: .black.opacity(0.12), radius: 10, y: 3)
     }
 }
@@ -246,12 +245,12 @@ private struct StopResultRow: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text(result.stop.name)
                     .font(.system(size: 16, weight: .semibold))
-                    .foregroundStyle(TFIColors.ink)
+                    .foregroundStyle(Color.cardInk)
                     .lineLimit(1)
                 HStack(spacing: 6) {
                     Text("Stop \(result.stop.code)")
                         .font(.system(size: 13, weight: .medium))
-                        .foregroundStyle(TFIColors.secondaryInk)
+                        .foregroundStyle(Color.cardSecondaryInk)
                         .fixedSize()
                     // As many route badges as fit, then "+N" for the rest.
                     ViewThatFits(in: .horizontal) {
@@ -265,7 +264,7 @@ private struct StopResultRow: View {
 
             Image(systemName: "chevron.right")
                 .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(TFIColors.secondaryInk.opacity(0.7))
+                .foregroundStyle(Color.cardSecondaryInk.opacity(0.7))
         }
         .padding(.horizontal, PanelMetrics.horizontalPadding)
         .padding(.vertical, 10)
@@ -284,7 +283,7 @@ private struct StopResultRow: View {
             if result.routes.count > count {
                 Text("+\(result.routes.count - count)")
                     .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(TFIColors.secondaryInk)
+                    .foregroundStyle(Color.cardSecondaryInk)
             }
         }
         .fixedSize()
