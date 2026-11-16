@@ -8,11 +8,13 @@ struct DeparturesPanelView: View {
     var maximumRows = 6
     /// Rows open the bus's line when tapped (inside a `NavigationStack` using `tripDestination()`).
     var linksToTrips = false
+    /// A star in the header for starring the stop (in-app boards only).
+    var favourite: PanelHeader.Favourite?
 
     static let width: CGFloat = 360
 
     var body: some View {
-        PanelCard(title: stopTitle, subtitle: stopName) {
+        PanelCard(title: stopTitle, subtitle: stopName, favourite: favourite) {
             switch content {
             case .reading(let hint):
                 PanelMessage(icon: "text.viewfinder", title: "Reading stop number…", detail: hint)

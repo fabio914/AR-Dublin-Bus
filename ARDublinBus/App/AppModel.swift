@@ -22,6 +22,8 @@ enum PanelContent: Equatable {
 @Observable
 final class AppModel {
     let service: DepartureService
+    /// Stops the user starred, listed on the Search tab.
+    let favourites = FavouriteStops()
     @ObservationIgnored let keyStore: APIKeyStore
     @ObservationIgnored private let watchResponder: WatchResponder
 

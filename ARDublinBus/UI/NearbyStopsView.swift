@@ -113,15 +113,7 @@ struct NearbyStopsView: View {
                     }
                 }
             }
-            .navigationDestination(for: NearbyStop.self) { stop in
-                ScrollView {
-                    StopBoardView(stopCode: stop.stop.code)
-                        .padding()
-                }
-                .background(Color.appBackground)
-                .navigationTitle("Stop \(stop.stop.code)")
-                .navigationBarTitleDisplayMode(.inline)
-            }
+            .navigationDestination(for: NearbyStop.self) { StopBoardScreen(stopCode: $0.stop.code) }
             .tripDestination()
         }
         .task(id: runID) {
@@ -191,7 +183,13 @@ struct NearbyStopsView: View {
                         .foregroundStyle(.secondary)
                     }
                     ForEach(model.stops) { entry in
-                        NearbyStopCard(entry: entry)
+                        StopSummaryCard(
+                            code: entry.stop.stop.code,
+                            name: entry.stop.stop.name,
+                            accessory: .init(systemImage: "figure.walk", text: DistanceText.walking(entry.stop.distance)),
+                            board: entry.board,
+                            destination: entry.stop
+                        )
                     }
                 case .departures:
                     NearbyDeparturesCard(model: model)
@@ -202,58 +200,6 @@ struct NearbyStopsView: View {
         }
         .background(Color.appBackground)
         .refreshable { runID = UUID() }
-    }
-}
-
-/// One nearby stop: green header with its distance, the next few buses, and a link to the full board.
-private struct NearbyStopCard: View {
-    let entry: NearbyStopsModel.StopEntry
-    static let rows = 3
-
-    var body: some View {
-        PanelCard(
-            title: entry.stop.stop.name,
-            subtitle: "Stop \(entry.stop.stop.code)",
-            accessory: .init(systemImage: "figure.walk", text: DistanceText.walking(entry.stop.distance))
-        ) {
-            if let board = entry.board {
-                let next = Array(board.departures.prefix(Self.rows))
-                if next.isEmpty {
-                    PanelMessage(icon: "moon.zzz.fill", title: "No departures in the next 90 minutes")
-                }
-                ForEach(Array(next.enumerated()), id: \.element.id) { index, departure in
-                    if index > 0 { PanelSeparator() }
-                    if let trip = departure.trip {
-                        NavigationLink(value: trip) {
-                            DepartureRow(departure: departure, now: .now, showsChevron: true)
-                                .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
-                    } else {
-                        DepartureRow(departure: departure, now: .now)
-                    }
-                }
-            } else {
-                ProgressView()
-                    .padding(.vertical, 24)
-            }
-
-            NavigationLink(value: entry.stop) {
-                HStack {
-                    Text("All departures")
-                    Spacer()
-                    Image(systemName: "chevron.right")
-                }
-                .font(.system(size: 15, weight: .semibold))
-                .foregroundStyle(TFIColors.green)
-                .padding(.horizontal, PanelMetrics.horizontalPadding)
-                .padding(.vertical, 12)
-                .background(PanelMetrics.footerBackground)
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-        }
-        .shadow(color: .black.opacity(0.12), radius: 10, y: 3)
     }
 }
 
