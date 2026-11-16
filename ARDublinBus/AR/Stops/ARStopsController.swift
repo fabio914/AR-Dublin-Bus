@@ -7,6 +7,8 @@ struct ARStopsStatus: Equatable, Sendable {
     enum Mode: Equatable, Sendable {
         /// Stops in AR are switched off.
         case off
+        /// The compass or location can't be used, so stops can't be placed.
+        case unavailable
         case waitingForLocation
         /// Placed from GPS and the compass (corrected by recognised signs).
         case compass
@@ -71,6 +73,8 @@ final class ARStopsController: NSObject, CLLocationManagerDelegate {
     private var compassRoot: AnchorEntity?
     private var placement = Placement.compass
     private var sessionUsesGeoTracking = false
+    /// The session knows where north is (compass-aligned, or geo tracking).
+    private var hasHeading = true
     private var geoState: ARGeoTrackingStatus.State = .notAvailable
     private var hasCheckedGeoAvailability = false
     private var isEnabled = false
@@ -99,7 +103,7 @@ final class ARStopsController: NSObject, CLLocationManagerDelegate {
         guard enabled != isEnabled else { return }
         isEnabled = enabled
         if enabled {
-            status.mode = .waitingForLocation
+            status.mode = hasHeading ? .waitingForLocation : .unavailable
             if locationManager.authorizationStatus == .notDetermined {
                 locationManager.requestWhenInUseAuthorization()
             }
@@ -114,14 +118,15 @@ final class ARStopsController: NSObject, CLLocationManagerDelegate {
     }
 
     /// The AR session was (re)started: its coordinate space and anchors are gone.
-    func sessionDidRestart(usesGeoTracking: Bool) {
+    func sessionDidRestart(usesGeoTracking: Bool, hasHeading: Bool) {
         sessionUsesGeoTracking = usesGeoTracking
+        self.hasHeading = hasHeading
         geoState = usesGeoTracking ? .initializing : .notAvailable
         alignment = GeoAlignment()
         removeAllPins()
         placement = .compass
         if isEnabled {
-            status.mode = .waitingForLocation
+            status.mode = hasHeading ? .waitingForLocation : .unavailable
             lastQueryLocation = nil
             if let lastLocation { handle(lastLocation) }
         }
@@ -211,7 +216,8 @@ final class ARStopsController: NSObject, CLLocationManagerDelegate {
     nonisolated func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {}
 
     private func handle(_ location: CLLocation) {
-        guard isEnabled, let frame = arView?.session.currentFrame, case .normal = frame.camera.trackingState else { return }
+        guard isEnabled, hasHeading,
+              let frame = arView?.session.currentFrame, case .normal = frame.camera.trackingState else { return }
         lastLocation = location
         alignment.addFix(location, cameraPosition: frame.camera.transform.translation)
         updateCompassTargets(snap: false)
@@ -329,6 +335,11 @@ final class ARStopsController: NSObject, CLLocationManagerDelegate {
     private func updateStatus() {
         guard isEnabled else { status = ARStopsStatus(); return }
         var status = ARStopsStatus()
+        guard hasHeading else {
+            status.mode = .unavailable
+            self.status = status
+            return
+        }
         status.stopCount = pins.count
         switch placement {
         case .geo:

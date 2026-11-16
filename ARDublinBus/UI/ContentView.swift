@@ -151,6 +151,8 @@ private struct ARStopsBadge: View {
         switch status.mode {
         case .off:
             nil
+        case .unavailable:
+            "Nearby stops need location access and the compass"
         case .waitingForLocation:
             "Finding stops around you…"
         case .compass, .geoLocalizing:

@@ -27,6 +27,9 @@ final class ARCoordinator: NSObject, ARSessionDelegate {
     private var geoTrackingFailed = false
     /// Geo tracking became available while a sign was tracked; switch once it's gone.
     private var pendingGeoSwitch = false
+    /// The compass or location can't be used (location access denied, say): the session is
+    /// aligned with gravity only. Signs still work; nearby stops can't be placed.
+    private var headingUnavailable = false
 
     /// Seconds between OCR attempts while the stop number is unknown.
     private let readInterval: TimeInterval = 0.35
@@ -91,7 +94,7 @@ final class ARCoordinator: NSObject, ARSessionDelegate {
         } else {
             let world = ARWorldTrackingConfiguration()
             // x east, y up, z south: lets stops be placed from GPS and the compass.
-            world.worldAlignment = .gravityAndHeading
+            world.worldAlignment = headingUnavailable ? .gravity : .gravityAndHeading
             world.detectionImages = BusStopSign.makeReferenceImages()
             world.maximumNumberOfTrackedImages = 1
             world.automaticImageScaleEstimationEnabled = true
@@ -100,7 +103,7 @@ final class ARCoordinator: NSObject, ARSessionDelegate {
 
         removeSign()
         arView?.session.run(configuration, options: [.resetTracking, .removeExistingAnchors])
-        stopsController?.sessionDidRestart(usesGeoTracking: usesGeoTracking)
+        stopsController?.sessionDidRestart(usesGeoTracking: usesGeoTracking, hasHeading: usesGeoTracking || !headingUnavailable)
         model.signLost() // back to searching
     }
 
@@ -174,9 +177,16 @@ final class ARCoordinator: NSObject, ARSessionDelegate {
 
     nonisolated func session(_ session: ARSession, didFailWithError error: Error) {
         let message = error.localizedDescription
+        let code = (error as? ARError)?.code
+        // What ARKit reports when it can't get the compass heading or the user's location.
+        let isHeadingFailure = code == .sensorFailed || code == .sensorUnavailable || code == .locationUnauthorized
         MainActor.assumeIsolated {
             if self.usesGeoTracking {
                 self.fallBackToWorldTracking()
+            } else if isHeadingFailure, !self.headingUnavailable {
+                // Reading signs doesn't need the compass: carry on without it.
+                self.headingUnavailable = true
+                self.startSession()
             } else {
                 self.model.trackingStatus = .failed(message)
             }

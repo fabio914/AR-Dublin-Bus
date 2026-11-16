@@ -24,7 +24,7 @@ Each fix is one commit on the `review-fixes` branch.
 
 ## AR session
 
-- [ ] **8. Fall back when the compass or location is unavailable.** The session always asks
+- [x] **8. Fall back when the compass or location is unavailable.** The session always asks
   for `.gravityAndHeading`; if that fails, sign scanning should keep working without the
   nearby-stop labels. *Needs checking on a device with location denied.*
 - [ ] **9. Pause AR under full-screen sheets.** Camera, tracking, OCR and GPS keep running
