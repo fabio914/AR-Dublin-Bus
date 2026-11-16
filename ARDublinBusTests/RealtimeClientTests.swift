@@ -2,47 +2,6 @@ import Foundation
 import Testing
 @testable import ARDublinBus
 
-/// Answers the realtime client's requests from memory.
-final class StubURLProtocol: URLProtocol, @unchecked Sendable {
-    private static let lock = NSLock()
-    nonisolated(unsafe) private static var _response: Result<(Int, Data), URLError> = .failure(URLError(.notConnectedToInternet))
-    nonisolated(unsafe) private static var _requests = 0
-
-    static var response: Result<(Int, Data), URLError> {
-        get { lock.withLock { _response } }
-        set { lock.withLock { _response = newValue } }
-    }
-
-    static var requests: Int {
-        get { lock.withLock { _requests } }
-        set { lock.withLock { _requests = newValue } }
-    }
-
-    static func makeSession() -> URLSession {
-        let configuration = URLSessionConfiguration.ephemeral
-        configuration.protocolClasses = [StubURLProtocol.self]
-        return URLSession(configuration: configuration)
-    }
-
-    override class func canInit(with request: URLRequest) -> Bool { true }
-    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
-
-    override func startLoading() {
-        Self.requests += 1
-        switch Self.response {
-        case .success(let (status, data)):
-            let response = HTTPURLResponse(url: request.url!, statusCode: status, httpVersion: nil, headerFields: nil)!
-            client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
-            client?.urlProtocol(self, didLoad: data)
-            client?.urlProtocolDidFinishLoading(self)
-        case .failure(let error):
-            client?.urlProtocol(self, didFailWithError: error)
-        }
-    }
-
-    override func stopLoading() {}
-}
-
 @Suite(.serialized)
 struct RealtimeClientTests {
     static let feed = Data(#"{"header":{"timestamp":"1700000000"},"entity":[]}"#.utf8)

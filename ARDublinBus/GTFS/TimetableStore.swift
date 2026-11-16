@@ -22,6 +22,8 @@ actor TimetableStore {
     private let feedURL: URL
     private let directory: URL
     private let maximumAge: TimeInterval
+    /// Used to ask the server whether the feed has changed.
+    private let session: URLSession
     private var timetable: StaticTimetable?
     private var loadTask: Task<StaticTimetable, Error>?
     private var phaseHandler: (@Sendable (TimetablePhase) -> Void)?
@@ -29,11 +31,13 @@ actor TimetableStore {
     init(
         feedURL: URL = TimetableStore.defaultFeedURL,
         directory: URL = TimetableStore.defaultDirectory,
-        maximumAge: TimeInterval = 3 * 24 * 3600
+        maximumAge: TimeInterval = 3 * 24 * 3600,
+        session: URLSession = .shared
     ) {
         self.feedURL = feedURL
         self.directory = directory
         self.maximumAge = maximumAge
+        self.session = session
     }
 
     static var defaultDirectory: URL {
@@ -44,7 +48,14 @@ actor TimetableStore {
     private var metadataURL: URL { directory.appendingPathComponent(Self.metadataFileName) }
     private var databaseURL: URL { directory.appendingPathComponent(Self.databaseFileName) }
 
+    private var validatorURL: URL { directory.appendingPathComponent(Self.validatorFileName) }
+    private var checkedURL: URL { directory.appendingPathComponent(Self.checkedFileName) }
+
     static let metadataFileName = "downloaded-at.txt"
+    /// The feed's `ETag` (or `Last-Modified`) when it was downloaded.
+    static let validatorFileName = "feed-validator.txt"
+    /// When the server last confirmed that the downloaded feed is still the current one.
+    static let checkedFileName = "checked-at.txt"
     static let databaseFileName = "timetable.sqlite"
 
     func setPhaseHandler(_ handler: @escaping @Sendable (TimetablePhase) -> Void) {
@@ -108,8 +119,9 @@ actor TimetableStore {
         }
         report(.ready(downloadedAt: downloadDate() ?? .now))
 
-        // Keep using the cached copy, but fetch a newer one in the background when stale.
-        if !downloaded, let downloadedAt, Date.now.timeIntervalSince(downloadedAt) > maximumAge {
+        // Keep using the cached copy, but look for a newer one in the background when stale.
+        if !downloaded, let downloadedAt,
+           Date.now.timeIntervalSince(max(downloadedAt, date(at: checkedURL) ?? .distantPast)) > maximumAge {
             Task { await self.refreshInBackground() }
         }
         return timetable
@@ -122,11 +134,16 @@ actor TimetableStore {
         }.value
     }
 
-    /// Fetches a newer feed while the current one stays in use. If that fails (offline, say),
-    /// the current timetable is kept and the phase goes back to `.ready`.
+    /// Fetches a newer feed, if the server has one, while the current one stays in use. If that
+    /// fails (offline, say), the current timetable is kept and the phase goes back to `.ready`.
     private func refreshInBackground() async {
+        if await feedIsUnchanged() {
+            // Nothing to download: check again in `maximumAge`.
+            try? ISO8601DateFormatter().string(from: .now).write(to: checkedURL, atomically: true, encoding: .utf8)
+            return
+        }
         do {
-            try await downloadAndBuild()
+            try await downloadAndBuild(inBackground: true)
             timetable = try await openDatabase()
         } catch {
             // Tried again the next time the app starts with a stale timetable.
@@ -134,9 +151,29 @@ actor TimetableStore {
         report(.ready(downloadedAt: downloadDate() ?? .now))
     }
 
-    private func downloadAndBuild() async throws {
+    /// Whether the server still publishes the feed that was downloaded, judging by its
+    /// `ETag`/`Last-Modified`. False when that can't be told.
+    private func feedIsUnchanged() async -> Bool {
+        guard let stored = try? String(contentsOf: validatorURL, encoding: .utf8), !stored.isEmpty else { return false }
+        var request = URLRequest(url: feedURL)
+        request.httpMethod = "HEAD"
+        request.timeoutInterval = 20
+        request.cachePolicy = .reloadIgnoringLocalCacheData
+        request.allowsConstrainedNetworkAccess = false
+        guard let (_, response) = try? await session.data(for: request),
+              let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else { return false }
+        return Self.validator(of: http) == stored
+    }
+
+    fileprivate static func validator(of response: URLResponse?) -> String? {
+        guard let http = response as? HTTPURLResponse else { return nil }
+        return http.value(forHTTPHeaderField: "ETag") ?? http.value(forHTTPHeaderField: "Last-Modified")
+    }
+
+    /// - Parameter inBackground: nobody asked for this download, so it's skipped in Low Data Mode.
+    private func downloadAndBuild(inBackground: Bool = false) async throws {
         report(.downloading(progress: 0))
-        let zipURL = try await ProgressDownloader.download(feedURL) { [weak self] fraction in
+        let (zipURL, validator) = try await ProgressDownloader.download(feedURL, allowsConstrainedNetwork: !inBackground) { [weak self] fraction in
             Task { await self?.report(.downloading(progress: fraction)) }
         }
         defer { try? FileManager.default.removeItem(at: zipURL) }
@@ -156,7 +193,7 @@ actor TimetableStore {
 
         report(.indexing)
         try await Task.detached(priority: .userInitiated) {
-            try Self.buildDatabase(in: staging)
+            try Self.buildDatabase(in: staging, validator: validator)
             try Self.install(staging, at: directory)
         }.value
     }
@@ -191,13 +228,16 @@ actor TimetableStore {
     }
 
     /// Builds the database next to the CSV files, then deletes them: only the database is kept.
-    private static func buildDatabase(in staging: URL) throws {
+    private static func buildDatabase(in staging: URL, validator: String?) throws {
         try TimetableDatabaseBuilder.build(fromGTFS: staging, to: staging.appendingPathComponent(databaseFileName))
         for name in TimetableDatabaseBuilder.requiredFiles + TimetableDatabaseBuilder.optionalFiles {
             try? FileManager.default.removeItem(at: staging.appendingPathComponent(name))
         }
         try ISO8601DateFormatter().string(from: .now)
             .write(to: staging.appendingPathComponent(metadataFileName), atomically: true, encoding: .utf8)
+        if let validator {
+            try validator.write(to: staging.appendingPathComponent(validatorFileName), atomically: true, encoding: .utf8)
+        }
     }
 
     /// Swaps the staging folder into place.
@@ -215,8 +255,10 @@ actor TimetableStore {
         try? mutableDirectory.setResourceValues(values)
     }
 
-    private func downloadDate() -> Date? {
-        guard let text = try? String(contentsOf: metadataURL, encoding: .utf8) else { return nil }
+    private func downloadDate() -> Date? { date(at: metadataURL) }
+
+    private func date(at url: URL) -> Date? {
+        guard let text = try? String(contentsOf: url, encoding: .utf8) else { return nil }
         return ISO8601DateFormatter().date(from: text.trimmingCharacters(in: .whitespacesAndNewlines))
     }
 
@@ -228,16 +270,20 @@ actor TimetableStore {
 /// Wraps a `URLSessionDownloadTask` so download progress can be reported.
 private final class ProgressDownloader: NSObject, URLSessionDownloadDelegate, @unchecked Sendable {
     private let onProgress: @Sendable (Double) -> Void
-    private var continuation: CheckedContinuation<URL, Error>?
+    private var continuation: CheckedContinuation<(URL, String?), Error>?
     private var lastReported: Double = -1
 
     private init(onProgress: @escaping @Sendable (Double) -> Void) {
         self.onProgress = onProgress
     }
 
-    static func download(_ url: URL, onProgress: @escaping @Sendable (Double) -> Void) async throws -> URL {
+    /// Downloads `url` to a temporary file. Also returns the response's `ETag`/`Last-Modified`.
+    static func download(_ url: URL, allowsConstrainedNetwork: Bool,
+                         onProgress: @escaping @Sendable (Double) -> Void) async throws -> (URL, String?) {
         let downloader = ProgressDownloader(onProgress: onProgress)
-        let session = URLSession(configuration: .default, delegate: downloader, delegateQueue: nil)
+        let configuration = URLSessionConfiguration.default
+        configuration.allowsConstrainedNetworkAccess = allowsConstrainedNetwork
+        let session = URLSession(configuration: configuration, delegate: downloader, delegateQueue: nil)
         defer { session.finishTasksAndInvalidate() }
         return try await withCheckedThrowingContinuation { continuation in
             downloader.continuation = continuation
@@ -264,7 +310,7 @@ private final class ProgressDownloader: NSObject, URLSessionDownloadDelegate, @u
         let destination = FileManager.default.temporaryDirectory.appendingPathComponent("gtfs-\(UUID().uuidString).zip")
         do {
             try FileManager.default.moveItem(at: location, to: destination)
-            finish(.success(destination))
+            finish(.success((destination, TimetableStore.validator(of: downloadTask.response))))
         } catch {
             finish(.failure(error))
         }
@@ -274,7 +320,7 @@ private final class ProgressDownloader: NSObject, URLSessionDownloadDelegate, @u
         if let error { finish(.failure(error)) }
     }
 
-    private func finish(_ result: Result<URL, Error>) {
+    private func finish(_ result: Result<(URL, String?), Error>) {
         guard let continuation else { return }
         self.continuation = nil
         continuation.resume(with: result)

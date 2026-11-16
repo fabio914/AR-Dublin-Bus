@@ -105,6 +105,46 @@ struct TimetableStoreTests {
         #expect(try refreshed.calls(atStopIDs: [GTFSFixture.stopID]).isEmpty == false)
     }
 
+    @Test func unchangedFeedIsNotDownloadedAgain() async throws {
+        let fixture = try GTFSFixture()
+        try fixture.install(downloaded: 10 * 24 * 3600)
+        try "\"abc\"".write(to: fixture.directory.appendingPathComponent(TimetableStore.validatorFileName), atomically: true, encoding: .utf8)
+        StubURLProtocol.setResponse(.success(.init(headers: ["ETag": "\"abc\""])), for: fixture.missingFeedURL)
+
+        let store = TimetableStore(feedURL: fixture.missingFeedURL, directory: fixture.directory, session: StubURLProtocol.makeSession())
+        let recorder = PhaseRecorder()
+        await store.setPhaseHandler { recorder.record($0) }
+        _ = try await store.loadedTimetable()
+
+        // The server is asked once, and the check is remembered.
+        let checked = fixture.directory.appendingPathComponent(TimetableStore.checkedFileName)
+        _ = await recorder.wait { _ in FileManager.default.fileExists(atPath: checked.path) }
+        #expect(FileManager.default.fileExists(atPath: checked.path))
+        #expect(StubURLProtocol.requestCount(for: fixture.missingFeedURL) == 1)
+        #expect(!recorder.phases.contains(where: { $0.isDownloading }))
+
+        // So the next launch doesn't ask again.
+        let next = TimetableStore(feedURL: fixture.missingFeedURL, directory: fixture.directory, session: StubURLProtocol.makeSession())
+        _ = try await next.loadedTimetable()
+        try await Task.sleep(for: .milliseconds(200))
+        #expect(StubURLProtocol.requestCount(for: fixture.missingFeedURL) == 1)
+    }
+
+    @Test func changedFeedIsDownloaded() async throws {
+        let fixture = try GTFSFixture()
+        try fixture.install(downloaded: 10 * 24 * 3600)
+        try "\"abc\"".write(to: fixture.directory.appendingPathComponent(TimetableStore.validatorFileName), atomically: true, encoding: .utf8)
+        StubURLProtocol.setResponse(.success(.init(headers: ["ETag": "\"new\""])), for: fixture.missingFeedURL)
+
+        let store = TimetableStore(feedURL: fixture.missingFeedURL, directory: fixture.directory, session: StubURLProtocol.makeSession())
+        let recorder = PhaseRecorder()
+        await store.setPhaseHandler { recorder.record($0) }
+        _ = try await store.loadedTimetable()
+
+        let phases = await recorder.wait { $0.contains(where: { $0.isDownloading }) }
+        #expect(phases.contains(where: { $0.isDownloading }))
+    }
+
     @Test func removesLeftoverStagingFolders() throws {
         let fileManager = FileManager.default
         let parent = fileManager.temporaryDirectory.appendingPathComponent("staging-test-\(UUID().uuidString)", isDirectory: true)
