@@ -15,7 +15,7 @@ Each fix is one commit on the `review-fixes` branch.
   only; nobody can board it. (`StaticTimetable.calls`)
 - [x] **4. Orphaned staging folders.** If the app is killed while the timetable is being
   prepared, about 260 MB of CSV files stay in Application Support (and in backups) forever.
-- [ ] **5. Watch shows departed buses and hides failures.** Past departures stay at "Due",
+- [x] **5. Watch shows departed buses and hides failures.** Past departures stay at "Due",
   and a failed refresh is invisible while an older answer is on screen.
 - [ ] **6. Duplicate departure IDs on loop routes.** A trip calling twice at the same stop
   produces two rows with the same ID.

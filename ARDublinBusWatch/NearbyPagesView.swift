@@ -18,7 +18,8 @@ struct NearbyPagesView: View {
                 if let response = model.response, !response.stops.isEmpty {
                     TabView(selection: $selection) {
                         ForEach(response.stops) { stop in
-                            StopPage(stop: stop, realtimeIssue: response.realtimeIssue, updatedAt: response.generatedAt)
+                            StopPage(stop: stop, realtimeIssue: response.realtimeIssue, updatedAt: response.generatedAt,
+                                     refreshFailure: model.refreshFailure)
                                 .tag(Optional(stop.id))
                                 .containerBackground(WatchColors.green.gradient, for: .tabView)
                         }
@@ -54,6 +55,8 @@ private struct StopPage: View {
     let stop: WatchNearbyResponse.Stop
     let realtimeIssue: String?
     let updatedAt: Date
+    /// Set when the boards couldn't be updated: what's shown is getting old.
+    let refreshFailure: String?
 
     var body: some View {
         ScrollView {
@@ -67,26 +70,35 @@ private struct StopPage: View {
                         .foregroundStyle(.white.opacity(0.75))
                 }
 
-                if stop.departures.isEmpty {
-                    Text("No buses in the next 90 minutes")
-                        .font(.footnote)
-                        .foregroundStyle(.white.opacity(0.75))
-                } else {
-                    TimelineView(.periodic(from: .now, by: 15)) { context in
+                // Buses drop off the list as they leave, even if the phone can't be reached.
+                TimelineView(.periodic(from: .now, by: 15)) { context in
+                    let departures = stop.upcomingDepartures(at: context.date)
+                    if departures.isEmpty {
+                        Text(refreshFailure == nil ? "No buses in the next 90 minutes" : "No recent times")
+                            .font(.footnote)
+                            .foregroundStyle(.white.opacity(0.75))
+                    } else {
                         VStack(spacing: 6) {
-                            ForEach(stop.departures) { departure in
+                            ForEach(departures) { departure in
                                 DepartureRow(departure: departure, now: context.date)
                             }
                         }
                     }
                 }
 
-                Label(
-                    "\(realtimeIssue == nil ? "Live" : "Timetable") · \(updatedAt.formatted(WatchNearbyResponse.Departure.clockFormat))",
-                    systemImage: realtimeIssue == nil ? "dot.radiowaves.left.and.right" : "calendar"
-                )
-                .font(.caption2)
-                .foregroundStyle(.white.opacity(0.7))
+                if let refreshFailure {
+                    Label("Not updated since \(updatedAt.formatted(WatchNearbyResponse.Departure.clockFormat)). \(refreshFailure)",
+                          systemImage: "exclamationmark.triangle.fill")
+                        .font(.caption2)
+                        .foregroundStyle(WatchColors.yellow)
+                } else {
+                    Label(
+                        "\(realtimeIssue == nil ? "Live" : "Timetable") · \(updatedAt.formatted(WatchNearbyResponse.Departure.clockFormat))",
+                        systemImage: realtimeIssue == nil ? "dot.radiowaves.left.and.right" : "calendar"
+                    )
+                    .font(.caption2)
+                    .foregroundStyle(.white.opacity(0.7))
+                }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }

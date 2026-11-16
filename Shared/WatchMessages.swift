@@ -20,6 +20,11 @@ struct WatchNearbyResponse: Codable, Equatable {
         let departures: [Departure]
 
         var id: String { code }
+
+        /// Buses that haven't left yet (or only just have: they show as "Due" for a minute).
+        func upcomingDepartures(at now: Date) -> [Departure] {
+            departures.filter { $0.expected > now.addingTimeInterval(-60) }
+        }
     }
 
     struct Departure: Codable, Equatable, Identifiable {
