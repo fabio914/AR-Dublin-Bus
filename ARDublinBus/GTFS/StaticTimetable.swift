@@ -113,7 +113,8 @@ final class StaticTimetable: @unchecked Sendable {
 
     // MARK: Calls
 
-    /// Every scheduled call at the given stops (GTFS `stop_id`s).
+    /// Every scheduled call at the given stops (GTFS `stop_id`s), including calls where the
+    /// trip ends (`isLastStop`).
     func calls(atStopIDs stopIDs: Set<String>) throws -> [StopCall] {
         let rows = stopIDs.compactMap { id in stopRowsByID[id].map { (id: id, row: $0) } }
         guard !rows.isEmpty else { return [] }
@@ -121,7 +122,7 @@ final class StaticTimetable: @unchecked Sendable {
         return try withDatabase { database in
             let query = try database.prepare("""
                 SELECT t.trip_id, t.start + ps.departure_offset - ps.dwell, t.start + ps.departure_offset, ps.sequence,
-                       r.route_id, s.service_id, h.text
+                       r.route_id, s.service_id, h.text, ps.is_last
                 FROM pattern_stops ps
                 JOIN trips t ON t.pattern = ps.pattern
                 JOIN routes r ON r.id = t.route
@@ -136,7 +137,8 @@ final class StaticTimetable: @unchecked Sendable {
                     calls.append(StopCall(
                         tripID: query.string(0), stopID: stopID,
                         arrival: query.int(1), departure: query.int(2), stopSequence: query.int(3),
-                        routeID: query.string(4), serviceID: query.string(5), headsign: query.string(6)
+                        routeID: query.string(4), serviceID: query.string(5), headsign: query.string(6),
+                        isLastStop: query.int(7) != 0
                     ))
                 }
                 query.reset()

@@ -61,9 +61,11 @@ struct StopCall: Hashable, Sendable {
     let routeID: String
     let serviceID: String
     let headsign: String
+    /// The trip ends here: passengers can get off but not on.
+    let isLastStop: Bool
 
     init(tripID: String, stopID: String, arrival: Int, departure: Int, stopSequence: Int,
-         routeID: String = "", serviceID: String = "", headsign: String = "") {
+         routeID: String = "", serviceID: String = "", headsign: String = "", isLastStop: Bool = false) {
         self.tripID = tripID
         self.stopID = stopID
         self.arrival = arrival
@@ -72,6 +74,7 @@ struct StopCall: Hashable, Sendable {
         self.routeID = routeID
         self.serviceID = serviceID
         self.headsign = headsign
+        self.isLastStop = isLastStop
     }
 }
 

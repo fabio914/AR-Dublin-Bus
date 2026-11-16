@@ -22,6 +22,31 @@ struct DepartureCalculatorTests {
         calculator.departures(calls: calls, stopIDs: stopIDs, timetable: timetable, realtime: realtime, now: now)
     }
 
+    @Test func tripsEndingAtTheStopAreNotDepartures() throws {
+        // E1 ends at stop 271; C1 calls there and carries on.
+        let fixture = try GTFSFixture(
+            trips: """
+            route_id,service_id,trip_id,trip_headsign,direction_id,shape_id
+            r27,WK,E1,O'Connell St,0
+            r27,WK,C1,Clare Hall,0
+            """,
+            stopTimes: """
+            trip_id,arrival_time,departure_time,stop_id,stop_sequence
+            E1,07:50:00,07:50:00,8220DB000115,1
+            E1,08:10:00,08:10:00,8220DB000271,2
+            C1,08:15:00,08:15:00,8220DB000271,1
+            C1,08:40:00,08:40:00,8220DB000115,2
+            """
+        )
+        let timetable = try fixture.load()
+        let calls = try timetable.calls(atStopIDs: stopIDs)
+        #expect(Dictionary(uniqueKeysWithValues: calls.map { ($0.tripID, $0.isLastStop) }) == ["E1": true, "C1": false])
+
+        let result = calculator.departures(calls: calls, stopIDs: stopIDs, timetable: timetable, realtime: nil,
+                                           now: .dublin(2026, 11, 16, 8, 0))
+        #expect(result.map(\.id) == ["C1@20261116"])
+    }
+
     @Test func scheduledOnlyWithoutRealtime() {
         // Monday 08:00.
         let result = departures(at: .dublin(2026, 11, 16, 8, 0))

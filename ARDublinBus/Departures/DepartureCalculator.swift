@@ -60,7 +60,8 @@ struct DepartureCalculator {
             let serviceDate = today.adding(days: dayOffset, calendar: calendar)
             let reference = serviceDate.serviceDayReference(calendar: calendar)
 
-            for call in calls {
+            // A trip that ends here can't be boarded, so it isn't a departure.
+            for call in calls where !call.isLastStop {
                 let scheduled = reference.addingTimeInterval(TimeInterval(call.arrival))
                 guard scheduled >= earliest.addingTimeInterval(-maximumLateness),
                       scheduled <= latest.addingTimeInterval(30 * 60),

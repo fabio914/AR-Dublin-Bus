@@ -71,11 +71,13 @@ struct GTFSFixture {
     r27,WK,T10,Clare Hall,0
     """
 
-    /// T1–T10 call at stop 271 at sequence 10 (T3 at 10 too).
+    /// T1–T10 call at stop 271 at sequence 10 (T3 at 10 too). T1 carries on to the decoy stop,
+    /// so it isn't ending at 271.
     static let defaultStopTimes = """
     trip_id,arrival_time,departure_time,stop_id,stop_sequence,stop_headsign,pickup_type,drop_off_type,timepoint
     T1,07:50:00,07:50:00,8220DB000115,1,,0,0,1
     T1,08:10:00,08:10:00,8220DB000271,10,,0,0,0
+    T1,08:25:00,08:25:00,8220DB0002711,20,,0,0,0
     T2,08:20:00,08:20:00,8220DB000271,10,,0,0,0
     T3,08:05:00,08:05:00,8220DB000271,10,,0,0,0
     T4,08:30:00,08:30:00,8220DB000271,10,,0,0,0

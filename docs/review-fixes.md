@@ -11,7 +11,7 @@ Each fix is one commit on the `review-fixes` branch.
 - [x] **2. Stale live data shown as live.** After a failed fetch, `RealtimeClient` keeps
   returning its cached feed for the rest of the throttle window however old it is, and the
   footer says "Live · updated" with the current time instead of the feed's time.
-- [ ] **3. Boards list buses that terminate at the stop.** A trip's final call is an arrival
+- [x] **3. Boards list buses that terminate at the stop.** A trip's final call is an arrival
   only; nobody can board it. (`StaticTimetable.calls`)
 - [ ] **4. Orphaned staging folders.** If the app is killed while the timetable is being
   prepared, about 260 MB of CSV files stay in Application Support (and in backups) forever.
