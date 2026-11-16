@@ -49,7 +49,7 @@ Each fix is one commit on the `review-fixes` branch.
 - [x] **15. API key in the binary rather than Info.plist.** A pre-build script generates a
   git-ignored Swift file from `NTA_API_KEY`, with the key stored as scrambled bytes.
   (Obscurity, not security: a determined person can still recover it.)
-- [ ] **16. Share duplicated code with the watch app.** Colours, ETA text and the distance
+- [x] **16. Share duplicated code with the watch app.** Colours, ETA text and the distance
   formatter exist twice.
 - [ ] **17. Remove unused code.** `StopBoard.hasLiveData`, `RealtimeSnapshot.tripCount`
   (tests only), `GeoAlignment.coordinate(of:)` (tests only).

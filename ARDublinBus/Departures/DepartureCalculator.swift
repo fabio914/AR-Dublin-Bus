@@ -18,7 +18,7 @@ struct Departure: Identifiable, Hashable, Sendable {
 
     /// Whole minutes until `expected`, never negative.
     func minutesAway(from now: Date) -> Int {
-        max(0, Int(expected.timeIntervalSince(now) / 60))
+        ETAText.minutes(until: expected, from: now)
     }
 }
 

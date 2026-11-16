@@ -203,11 +203,6 @@ struct NearbyStopsView: View {
         .background(Color(.systemGroupedBackground))
         .refreshable { runID = UUID() }
     }
-
-    static func distance(_ metres: Double) -> String {
-        Measurement(value: metres, unit: UnitLength.meters)
-            .formatted(.measurement(width: .abbreviated, usage: .road, numberFormatStyle: .number.precision(.fractionLength(0))))
-    }
 }
 
 /// One nearby stop: green header with its distance, the next few buses, and a link to the full board.
@@ -219,7 +214,7 @@ private struct NearbyStopCard: View {
         PanelCard(
             title: entry.stop.stop.name,
             subtitle: "Stop \(entry.stop.stop.code)",
-            accessory: .init(systemImage: "figure.walk", text: NearbyStopsView.distance(entry.stop.distance))
+            accessory: .init(systemImage: "figure.walk", text: DistanceText.walking(entry.stop.distance))
         ) {
             if let board = entry.board {
                 let next = Array(board.departures.prefix(Self.rows))
@@ -280,7 +275,7 @@ private struct NearbyDeparturesCard: View {
                 let row = DepartureRow(
                     departure: item.departure,
                     now: .now,
-                    detail: "\(NearbyStopsView.distance(item.stop.distance)) · Stop \(item.stop.stop.code) · \(item.stop.stop.name)",
+                    detail: "\(DistanceText.walking(item.stop.distance)) · Stop \(item.stop.stop.code) · \(item.stop.stop.name)",
                     showsChevron: true
                 )
                 .contentShape(Rectangle())

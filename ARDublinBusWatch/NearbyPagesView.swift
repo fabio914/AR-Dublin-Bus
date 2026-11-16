@@ -1,11 +1,5 @@
 import SwiftUI
 
-enum WatchColors {
-    static let green = Color(red: 0 / 255, green: 102 / 255, blue: 84 / 255)
-    static let yellow = Color(red: 255 / 255, green: 210 / 255, blue: 0 / 255)
-    static let live = Color(red: 60 / 255, green: 210 / 255, blue: 140 / 255)
-}
-
 /// One page per nearby stop, swiped horizontally.
 struct NearbyPagesView: View {
     @Environment(WatchNearbyModel.self) private var model
@@ -21,7 +15,7 @@ struct NearbyPagesView: View {
                             StopPage(stop: stop, realtimeIssue: response.realtimeIssue, updatedAt: response.generatedAt,
                                      refreshFailure: model.refreshFailure)
                                 .tag(Optional(stop.id))
-                                .containerBackground(WatchColors.green.gradient, for: .tabView)
+                                .containerBackground(TFIColors.green.gradient, for: .tabView)
                         }
                     }
                     .tabViewStyle(.page)
@@ -65,7 +59,7 @@ private struct StopPage: View {
                     Text(stop.name)
                         .font(.headline)
                         .lineLimit(2)
-                    Text("Stop \(stop.code) · \(Self.distance(stop.distance))")
+                    Text("Stop \(stop.code) · \(DistanceText.walking(stop.distance))")
                         .font(.caption2)
                         .foregroundStyle(.white.opacity(0.75))
                 }
@@ -87,13 +81,13 @@ private struct StopPage: View {
                 }
 
                 if let refreshFailure {
-                    Label("Not updated since \(updatedAt.formatted(WatchNearbyResponse.Departure.clockFormat)). \(refreshFailure)",
+                    Label("Not updated since \(updatedAt.formatted(ETAText.clockFormat)). \(refreshFailure)",
                           systemImage: "exclamationmark.triangle.fill")
                         .font(.caption2)
-                        .foregroundStyle(WatchColors.yellow)
+                        .foregroundStyle(TFIColors.yellow)
                 } else {
                     Label(
-                        "\(realtimeIssue == nil ? "Live" : "Timetable") · \(updatedAt.formatted(WatchNearbyResponse.Departure.clockFormat))",
+                        "\(realtimeIssue == nil ? "Live" : "Timetable") · \(updatedAt.formatted(ETAText.clockFormat))",
                         systemImage: realtimeIssue == nil ? "dot.radiowaves.left.and.right" : "calendar"
                     )
                     .font(.caption2)
@@ -102,11 +96,6 @@ private struct StopPage: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
-    }
-
-    static func distance(_ metres: Double) -> String {
-        Measurement(value: metres, unit: UnitLength.meters)
-            .formatted(.measurement(width: .abbreviated, usage: .road, numberFormatStyle: .number.precision(.fractionLength(0))))
     }
 }
 
@@ -122,7 +111,7 @@ private struct DepartureRow: View {
                 .lineLimit(1)
                 .minimumScaleFactor(0.6)
                 .frame(width: 38, height: 22)
-                .background(WatchColors.yellow, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                .background(TFIColors.yellow, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
 
             Text(departure.destination)
                 .font(.footnote)
@@ -149,7 +138,7 @@ private struct DepartureRow: View {
                 if departure.isRealtime {
                     Image(systemName: "dot.radiowaves.up.forward")
                         .font(.system(size: 9, weight: .bold))
-                        .foregroundStyle(WatchColors.live)
+                        .foregroundStyle(TFIColors.liveOnDark)
                 }
                 Text(departure.eta(from: now))
                     .font(.system(.footnote, design: .rounded).weight(.bold))
@@ -180,7 +169,7 @@ private struct StatusView: View {
             case .failed(let message):
                 Image(systemName: "exclamationmark.triangle.fill")
                     .font(.title2)
-                    .foregroundStyle(WatchColors.yellow)
+                    .foregroundStyle(TFIColors.yellow)
                 Text(message)
             }
         }

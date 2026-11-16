@@ -37,17 +37,8 @@ struct WatchNearbyResponse: Codable, Equatable {
 
         /// "Due", "7 min", or a clock time an hour or more away.
         func eta(from now: Date) -> String {
-            let minutes = max(0, Int(expected.timeIntervalSince(now) / 60))
-            if minutes == 0 { return "Due" }
-            if minutes < 60 { return "\(minutes) min" }
-            return expected.formatted(Self.clockFormat)
+            ETAText.relative(expected: expected, now: now)
         }
-
-        static let clockFormat = Date.FormatStyle(
-            date: .omitted,
-            time: .shortened,
-            timeZone: TimeZone(identifier: "Europe/Dublin")!
-        )
     }
 
     var stops: [Stop]

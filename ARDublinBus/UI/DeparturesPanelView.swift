@@ -1,15 +1,5 @@
 import SwiftUI
 
-enum TFIColors {
-    static let green = Color(red: 0 / 255, green: 102 / 255, blue: 84 / 255)
-    static let darkGreen = Color(red: 0 / 255, green: 74 / 255, blue: 61 / 255)
-    static let yellow = Color(red: 255 / 255, green: 210 / 255, blue: 0 / 255)
-    static let live = Color(red: 0 / 255, green: 150 / 255, blue: 95 / 255)
-    static let ink = Color(red: 0.11, green: 0.12, blue: 0.13)
-    static let secondaryInk = Color(red: 0.38, green: 0.4, blue: 0.42)
-    static let separator = Color(red: 0.88, green: 0.89, blue: 0.9)
-}
-
 /// The floating departures board. Rendered into a texture for the AR panel and
 /// also shown directly in the manual stop lookup sheet.
 struct DeparturesPanelView: View {
@@ -76,8 +66,6 @@ struct DeparturesPanelView: View {
             PanelFooter { RealtimeStatusLabel(issue: board.realtimeIssue, updatedAt: board.updatedAt) }
         }
     }
-
-    static let clockFormat = Date.FormatStyle(date: .omitted, time: .shortened, timeZone: Dublin.timeZone)
 }
 
 /// "Live · updated 18:54", or why only timetable times are shown.
@@ -93,7 +81,7 @@ struct RealtimeStatusLabel: View {
         } else {
             Image(systemName: "dot.radiowaves.left.and.right")
                 .foregroundStyle(TFIColors.live)
-            Text("Live · updated \(updatedAt.formatted(DeparturesPanelView.clockFormat))")
+            Text("Live · updated \(updatedAt.formatted(ETAText.clockFormat))")
         }
     }
 }
@@ -168,16 +156,8 @@ struct DepartureRow: View {
     }
 }
 
-enum ETAText {
-    /// "Due", "7 min", or a clock time when an hour or more away.
+extension ETAText {
     static func relative(_ departure: Departure, now: Date) -> String {
-        let minutes = departure.minutesAway(from: now)
-        if minutes <= 0 { return "Due" }
-        if minutes < 60 { return "\(minutes) min" }
-        return clock(departure.expected)
-    }
-
-    static func clock(_ date: Date) -> String {
-        date.formatted(DeparturesPanelView.clockFormat)
+        relative(expected: departure.expected, now: now)
     }
 }

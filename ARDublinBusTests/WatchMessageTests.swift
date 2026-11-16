@@ -41,7 +41,7 @@ struct WatchMessageTests {
         #expect(eta(0.4) == "Due")
         #expect(eta(-2) == "Due")
         #expect(eta(12.7) == "12 min")
-        #expect(eta(90) == Date.dublin(2026, 11, 16, 9, 30).formatted(WatchNearbyResponse.Departure.clockFormat))
+        #expect(eta(90) == Date.dublin(2026, 11, 16, 9, 30).formatted(ETAText.clockFormat))
     }
 
     @Test func packsBoardsForTheWatch() {
