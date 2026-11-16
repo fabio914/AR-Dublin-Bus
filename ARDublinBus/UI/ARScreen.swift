@@ -20,16 +20,17 @@ struct ARScreen: View {
             }
 
             VStack(spacing: 10) {
-                VStack(alignment: .leading, spacing: 6) {
-                    StatusBadge(model: model)
-                    ARStopsBadge(status: model.arStopsStatus)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
                 TimetableBanner(phase: model.timetablePhase, retry: model.retryTimetable)
                 Spacer()
                 if !model.hasAPIKey {
                     APIKeyHint(action: openSettings)
                 }
+                // At the bottom, out of the way of the signs and labels in the camera view.
+                VStack(alignment: .leading, spacing: 6) {
+                    ARStopsBadge(status: model.arStopsStatus)
+                    StatusBadge(model: model)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 8)

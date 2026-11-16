@@ -60,6 +60,8 @@ struct StopLookupView: View {
             .navigationBarTitleDisplayMode(.inline)
             .tripDestination()
         }
+        // Ready to type as soon as the tab opens.
+        .onAppear { isInputFocused = true }
         .onChange(of: input) { selectedCode = nil }
         .task(id: query) {
             guard !query.isEmpty else {

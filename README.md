@@ -23,6 +23,8 @@ any stop by number, and includes an Apple Watch app.
 - **Search:** search by stop number or name. Matching stops are listed as you type, with the
   routes that call at each. Names match regardless of case, accents and apostrophes, and the
   abbreviations in stop names are understood ("oconnell street lower" finds "O'Connell St Lwr").
+- **Intro:** the first launch downloads the timetable, with a retry if it fails, and offers to
+  set the NTA API key. Later launches go straight to the tabs once the timetable is open.
 - **Map:** the first tab. Every bus stop on a map, clustered when zoomed out. Tap a stop to see
   its board in a half-height sheet, with the map still usable behind it. The AR button in the
   navigation bar opens the camera view.
@@ -179,7 +181,7 @@ answer so the app opens with something to show.
 | `ARDublinBus/Realtime` | GTFS-Realtime client and models. |
 | `ARDublinBus/Departures` | Merges timetable and live data into boards and trip journeys. |
 | `ARDublinBus/Map` | The clustered map of stops (`MKMapView`). |
-| `ARDublinBus/UI` | SwiftUI screens: the tab bar, AR view, Nearby, Search, stop board, line view. |
+| `ARDublinBus/UI` | SwiftUI screens: the intro, the tab bar, AR view, Nearby, Search, stop board, line view. |
 | `ARDublinBus/Watch` | Answers requests from the watch app. |
 | `ARDublinBusWatch` | The watchOS app. |
 | `Shared` | Code used by both apps: location and watch messages. |
