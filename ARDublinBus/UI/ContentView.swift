@@ -10,19 +10,32 @@ struct ContentView: View {
     @Environment(AppModel.self) private var model
     /// Latched, so clearing the key in Settings later doesn't bring the intro back.
     @State private var isSetUp = false
+    @State private var launchedAt = Date.now
+
+    /// The intro stays up at least this long, so it doesn't flash by when nothing needs setting up.
+    static let minimumIntroTime: TimeInterval = 1
 
     var body: some View {
-        Group {
+        ZStack {
             if isSetUp {
                 MainTabs()
                     .transition(.opacity)
             } else {
-                IntroView { withAnimation { isSetUp = true } }
+                IntroView(finish: showApp)
                     .transition(.opacity)
             }
         }
         .tint(Color.appTint)
         .task { await model.start() }
+    }
+
+    /// Fades from the intro to the tabs.
+    private func showApp() {
+        Task {
+            let remaining = Self.minimumIntroTime - Date.now.timeIntervalSince(launchedAt)
+            if remaining > 0 { try? await Task.sleep(for: .seconds(remaining)) }
+            withAnimation(.easeInOut(duration: 0.5)) { isSetUp = true }
+        }
     }
 }
 

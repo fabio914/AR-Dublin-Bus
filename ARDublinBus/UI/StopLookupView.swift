@@ -45,11 +45,16 @@ struct StopLookupView: View {
                         .padding(.vertical, 8)
                         .background(Color.appCard, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
 
-                        Button("Show", action: show)
-                            .buttonStyle(.borderedProminent)
-                            .tint(TFIColors.green)
-                            .disabled(query.isEmpty)
+                        // Only while typing; the keyboard's own search key does the same.
+                        if isInputFocused {
+                            Button("Search", action: show)
+                                .buttonStyle(.borderedProminent)
+                                .tint(TFIColors.green)
+                                .disabled(query.isEmpty)
+                                .transition(.move(edge: .trailing).combined(with: .opacity))
+                        }
                     }
+                    .animation(.default, value: isInputFocused)
                     content
                 }
                 .padding()
