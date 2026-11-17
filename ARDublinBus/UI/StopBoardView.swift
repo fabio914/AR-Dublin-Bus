@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// A live-updating departures board for one stop (same look as the AR panel).
-/// Tapping a bus opens its line, so use it inside a `NavigationStack` with `tripDestination()`.
+/// Tapping a bus opens its line, so use it inside a `NavigationStack` with `routeDestinations()`.
 struct StopBoardView: View {
     @Environment(AppModel.self) private var model
     let stopCode: String
@@ -50,14 +50,13 @@ struct StopBoardView: View {
 }
 
 /// A stop's board followed by all its lines, with a map of where each one goes. Loads both and
-/// keeps the board fresh. Use inside a `NavigationStack` that uses `tripDestination()`.
+/// keeps the board fresh. Use inside a `NavigationStack` that uses `routeDestinations()`.
 struct StopDetailsView: View {
     @Environment(AppModel.self) private var model
     let stopCode: String
     @State private var overview: StopLines?
     @State private var linesError: String?
     @State private var board: StopBoard?
-    @State private var selectedLineID: String?
 
     /// Enough departures that most lines' next bus is found, not just the first 12.
     static let departureLimit = 200
@@ -70,8 +69,7 @@ struct StopDetailsView: View {
                     overview: overview,
                     error: linesError,
                     board: board,
-                    now: context.date,
-                    selectedLineID: $selectedLineID
+                    now: context.date
                 )
             }
         }
@@ -85,7 +83,7 @@ struct StopDetailsView: View {
     }
 }
 
-/// A stop as a screen pushed onto a `NavigationStack` that uses `tripDestination()`.
+/// A stop as a screen pushed onto a `NavigationStack` that uses `routeDestinations()`.
 struct StopBoardScreen: View {
     let stopCode: String
 
@@ -120,7 +118,7 @@ struct StopBoardSheet: View {
                     Button("Done", action: done)
                 }
             }
-            .tripDestination()
+            .routeDestinations()
         }
         .presentationDetents([.medium, .large])
         // Keep the screen behind usable while the board is at half height.

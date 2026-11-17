@@ -1,8 +1,9 @@
 import Foundation
 
 // Reads the GTFS-Realtime `FeedMessage` from protobuf, as served by the NTA's GTFS-R API by
-// default (about a sixth of the size of `?format=json`). Only the TripUpdates fields the app
-// uses are read; everything else, including vehicles, alerts and extensions, is skipped.
+// default (about a sixth of the size of `?format=json`). Only the TripUpdates and
+// VehiclePositions fields the app uses are read; everything else, such as alerts and
+// extensions, is skipped.
 //
 // Field numbers are from gtfs-realtime.proto:
 // https://gtfs.org/documentation/realtime/proto/
@@ -43,15 +44,70 @@ extension GTFSRFeedMessage.Entity {
         var id: String?
         var isDeleted: Bool?
         var tripUpdate: GTFSRTripUpdate?
+        var vehicle: GTFSRVehiclePosition?
         while let field = try reader.nextField() {
             switch (field.number, field.wireType) {
             case (1, .lengthDelimited): id = try reader.string()
             case (2, .varint): isDeleted = try reader.varint() != 0
             case (3, .lengthDelimited): tripUpdate = try GTFSRTripUpdate(protobuf: reader.message())
+            case (4, .lengthDelimited): vehicle = try GTFSRVehiclePosition(protobuf: reader.message())
             default: try reader.skip(field.wireType)
             }
         }
-        self.init(id: id, isDeleted: isDeleted, tripUpdate: tripUpdate)
+        self.init(id: id, isDeleted: isDeleted, tripUpdate: tripUpdate, vehicle: vehicle)
+    }
+}
+
+extension GTFSRVehiclePosition {
+    init(protobuf reader: ProtobufReader) throws {
+        var reader = reader
+        var trip: GTFSRTripUpdate.TripDescriptor?
+        var position: Position?
+        var timestamp: FlexibleInt?
+        var vehicle: Descriptor?
+        while let field = try reader.nextField() {
+            switch (field.number, field.wireType) {
+            case (1, .lengthDelimited): trip = try GTFSRTripUpdate.TripDescriptor(protobuf: reader.message())
+            case (2, .lengthDelimited): position = try Position(protobuf: reader.message())
+            case (5, .varint): timestamp = FlexibleInt(try reader.uint64())
+            case (8, .lengthDelimited): vehicle = try Descriptor(protobuf: reader.message())
+            default: try reader.skip(field.wireType)
+            }
+        }
+        self.init(trip: trip, position: position, timestamp: timestamp, vehicle: vehicle)
+    }
+}
+
+extension GTFSRVehiclePosition.Position {
+    /// `nil` without a latitude and longitude (both are required by the spec).
+    init?(protobuf reader: ProtobufReader) throws {
+        var reader = reader
+        var latitude, longitude, bearing: Double?
+        while let field = try reader.nextField() {
+            switch (field.number, field.wireType) {
+            case (1, .fixed32): latitude = Double(try reader.float())
+            case (2, .fixed32): longitude = Double(try reader.float())
+            case (3, .fixed32): bearing = Double(try reader.float())
+            default: try reader.skip(field.wireType)
+            }
+        }
+        guard let latitude, let longitude else { return nil }
+        self.init(latitude: latitude, longitude: longitude, bearing: bearing)
+    }
+}
+
+extension GTFSRVehiclePosition.Descriptor {
+    init(protobuf reader: ProtobufReader) throws {
+        var reader = reader
+        var id, label: String?
+        while let field = try reader.nextField() {
+            switch (field.number, field.wireType) {
+            case (1, .lengthDelimited): id = try reader.string()
+            case (2, .lengthDelimited): label = try reader.string()
+            default: try reader.skip(field.wireType)
+            }
+        }
+        self.init(id: id, label: label)
     }
 }
 
@@ -225,6 +281,15 @@ struct ProtobufReader {
     mutating func int64() throws -> Int { Int(Int64(bitPattern: try varint())) }
 
     mutating func int32() throws -> Int { Int(Int32(truncatingIfNeeded: try varint())) }
+
+    /// A `float` field (wire type `fixed32`, little-endian IEEE 754).
+    mutating func float() throws -> Float {
+        guard end - index >= 4 else { throw ProtobufError.truncated }
+        var bits: UInt32 = 0
+        for offset in 0..<4 { bits |= UInt32(bytes[index + offset]) << (8 * offset) }
+        index += 4
+        return Float(bitPattern: bits)
+    }
 
     mutating func string() throws -> String {
         String(decoding: bytes[try lengthDelimitedRange()], as: UTF8.self)

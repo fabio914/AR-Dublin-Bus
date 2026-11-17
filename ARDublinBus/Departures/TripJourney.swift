@@ -24,6 +24,8 @@ struct TripJourney: Sendable {
     let stops: [Stop]
     /// The route's path. Falls back to the stops' positions when the feed has no shape.
     let shape: [CLLocationCoordinate2D]
+    /// Where the bus is, when it reports its position.
+    let vehicle: VehiclePosition?
     /// When live data is unavailable, why.
     let realtimeIssue: String?
     /// When the live feed was published (or fetched, if it doesn't say).
@@ -38,12 +40,21 @@ struct TripJourney: Sendable {
 
     var isCancelled: Bool { !stops.isEmpty && stops.allSatisfy(\.isCancelled) }
 
+    /// The first stop of the trip.
+    var start: Stop? { stops.first }
+    /// The last stop of the trip.
+    var end: Stop? { stops.last }
+
+    /// A position older than this isn't shown: the bus has probably stopped reporting.
+    static let maximumVehicleAge: TimeInterval = 5 * 60
+
     /// Applies the live feed to every stop of the trip, with the same rules as the boards.
     static func make(
         details: TripDetails,
         reference: TripReference,
         realtime: RealtimeSnapshot?,
         realtimeIssue: String?,
+        vehicles: VehicleSnapshot? = nil,
         now: Date,
         calendar: Calendar = Dublin.calendar
     ) -> TripJourney {
@@ -81,12 +92,19 @@ struct TripJourney: Sendable {
             }
             : details.shape
 
+        let vehicle = vehicles?.position(forTripID: details.tripID, serviceDate: reference.serviceDate)
+            .flatMap { position -> VehiclePosition? in
+                let measured = position.timestamp ?? vehicles?.feedTimestamp ?? vehicles?.fetchedAt ?? now
+                return now.timeIntervalSince(measured) <= maximumVehicleAge ? position : nil
+            }
+
         return TripJourney(
             reference: reference,
             route: details.route,
             headsign: details.headsign,
             stops: stops,
             shape: shape,
+            vehicle: vehicle,
             realtimeIssue: realtimeIssue,
             realtimeTimestamp: realtime.map { $0.feedTimestamp ?? $0.fetchedAt },
             generatedAt: now

@@ -72,6 +72,38 @@ struct TripJourneyTests {
         #expect(journey.shape.first?.latitude == 53.348596)
     }
 
+    private func vehicles(_ entities: String) throws -> VehicleSnapshot {
+        let json = #"{"header":{"timestamp":"1794600000"},"entity":[\#(entities)]}"#
+        return VehicleSnapshot(feed: try GTFSRFeedMessage.decode(from: Data(json.utf8)))
+    }
+
+    @Test func showsTheBusWhereItLastReported() throws {
+        let details = try #require(try timetable.tripDetails(tripID: "T1"))
+        let now = Date.dublin(2026, 11, 16, 8, 0)
+        let measured = Int(now.timeIntervalSince1970) - 40
+        let feed = try vehicles("""
+            {"id":"V1","vehicle":{"trip":{"trip_id":"T1","start_date":"20261116"},
+             "position":{"latitude":53.36,"longitude":-6.262,"bearing":180},"timestamp":"\(measured)","vehicle":{"id":"7"}}},
+            {"id":"V2","vehicle":{"trip":{"trip_id":"T2","start_date":"20261116"},
+             "position":{"latitude":53.0,"longitude":-6.0},"timestamp":"\(measured)"}}
+            """)
+
+        let journey = TripJourney.make(details: details, reference: reference("T1"), realtime: nil,
+                                       realtimeIssue: nil, vehicles: feed, now: now)
+        let vehicle = try #require(journey.vehicle)
+        #expect(vehicle.latitude == 53.36)
+        #expect(vehicle.bearing == 180)
+        #expect(vehicle.vehicleID == "7")
+        #expect(journey.start?.stop.code == "115")
+        #expect(journey.end?.stop.code == "2711")
+
+        // A position that stopped updating ten minutes ago is left out.
+        let later = now.addingTimeInterval(10 * 60)
+        let stale = TripJourney.make(details: details, reference: reference("T1"), realtime: nil,
+                                     realtimeIssue: nil, vehicles: feed, now: later)
+        #expect(stale.vehicle == nil)
+    }
+
     @Test func serviceBuildsJourneysFromTheStore() async throws {
         let fixture = try GTFSFixture()
         _ = try fixture.load()

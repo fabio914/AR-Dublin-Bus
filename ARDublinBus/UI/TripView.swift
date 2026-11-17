@@ -2,9 +2,11 @@ import MapKit
 import SwiftUI
 
 extension View {
-    /// Lets `NavigationLink(value: TripReference)` rows open the line screen.
-    func tripDestination() -> some View {
+    /// Lets `NavigationLink(value: TripReference)` rows open a bus's trip, and
+    /// `NavigationLink(value: LineReference)` rows open a route's line screen.
+    func routeDestinations() -> some View {
         navigationDestination(for: TripReference.self) { TripView(reference: $0) }
+            .navigationDestination(for: LineReference.self) { LineView(reference: $0) }
     }
 }
 
@@ -49,61 +51,29 @@ struct TripView: View {
     }
 }
 
-/// The route's path with its stops; the stop the bus was picked from is highlighted.
+/// The route's path with its stops, where it starts and ends, the stop the bus was picked
+/// from, and the bus itself when it reports its position.
 private struct TripMap: View {
     let journey: TripJourney
-    @State private var position: MapCameraPosition
-
-    init(journey: TripJourney) {
-        self.journey = journey
-        _position = State(initialValue: Self.cameraPosition(for: journey))
-    }
 
     var body: some View {
-        Map(position: $position) {
-            MapPolyline(coordinates: journey.shape)
-                .stroke(Color.appTint, style: StrokeStyle(lineWidth: 5, lineCap: .round, lineJoin: .round))
-
-            ForEach(journey.stops) { stop in
-                if let coordinate = stop.stop.coordinate {
-                    if stop.sequence == journey.reference.stopSequence {
-                        Annotation(stop.stop.name, coordinate: coordinate) {
-                            Image(systemName: "bus.fill")
-                                .font(.system(size: 13, weight: .bold))
-                                .foregroundStyle(TFIColors.ink)
-                                .frame(width: 28, height: 28)
-                                .background(TFIColors.yellow, in: Circle())
-                                .overlay(Circle().stroke(.white, lineWidth: 2))
-                                .shadow(radius: 2)
-                        }
-                    } else {
-                        Annotation(stop.stop.name, coordinate: coordinate) {
-                            Circle()
-                                .fill(.white)
-                                .stroke(stop.hasPassed ? Color.gray : TFIColors.darkGreen, lineWidth: 2)
-                                .frame(width: 7, height: 7)
-                        }
-                        .annotationTitles(.hidden)
-                    }
-                }
+        RouteMap(
+            path: journey.shape,
+            stops: journey.stops.map { RouteMap.Stop(id: $0.sequence, stop: $0.stop, isDimmed: $0.hasPassed) },
+            highlighted: journey.origin?.stop,
+            vehicles: journey.vehicle.map { [$0] } ?? [],
+            routeKey: journey.reference.tripID
+        )
+        .overlay(alignment: .bottomLeading) {
+            if let vehicle = journey.vehicle {
+                MapCaption(systemImage: "bus.fill", text: seen(vehicle))
             }
-
-            UserAnnotation()
-        }
-        .mapStyle(.standard(pointsOfInterest: .excludingAll))
-        .mapControls {
-            MapUserLocationButton()
-            MapCompass()
         }
     }
 
-    /// The whole route, with some padding.
-    static func cameraPosition(for journey: TripJourney) -> MapCameraPosition {
-        guard !journey.shape.isEmpty else { return .automatic }
-        var rect = MKPolyline(coordinates: journey.shape, count: journey.shape.count).boundingMapRect
-        let padding = max(rect.width, rect.height) * 0.12 + 300
-        rect = rect.insetBy(dx: -padding, dy: -padding)
-        return .rect(rect)
+    private func seen(_ vehicle: VehiclePosition) -> Text {
+        guard let timestamp = vehicle.timestamp else { return Text("Live bus position") }
+        return Text("Bus seen at \(ETAText.clock(timestamp))")
     }
 }
 
@@ -157,7 +127,8 @@ private struct TripStopRow: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            timeline
+            // Grey where the bus has already been.
+            RouteTimelineMarker(isHighlighted: isOrigin, isDimmed: stop.hasPassed, isFirst: isFirst, isLast: isLast)
             VStack(alignment: .leading, spacing: 1) {
                 Text(stop.stop.name)
                     .font(.system(size: 16, weight: isOrigin ? .bold : .medium))
@@ -175,22 +146,6 @@ private struct TripStopRow: View {
         .padding(.horizontal, PanelMetrics.horizontalPadding)
         .background(isOrigin ? TFIColors.yellow.opacity(0.22) : .clear)
         .accessibilityElement(children: .combine)
-    }
-
-    /// A vertical line through every stop, grey where the bus has already been.
-    private var timeline: some View {
-        let colour = stop.hasPassed ? Color.gray.opacity(0.5) : Color.appTint
-        return ZStack {
-            VStack(spacing: 0) {
-                Rectangle().fill(isFirst ? .clear : colour).frame(width: 4)
-                Rectangle().fill(isLast ? .clear : colour).frame(width: 4)
-            }
-            Circle()
-                .fill(isOrigin ? TFIColors.yellow : .white)
-                .stroke(colour, lineWidth: 3)
-                .frame(width: isOrigin ? 18 : 13, height: isOrigin ? 18 : 13)
-        }
-        .frame(width: 20)
     }
 
     @ViewBuilder
@@ -212,5 +167,30 @@ private struct TripStopRow: View {
                     .monospacedDigit()
             }
         }
+    }
+}
+
+/// A stop on a vertical line through every stop of a route, as on the trip and line screens.
+struct RouteTimelineMarker: View {
+    /// The stop the user picked: a bigger, yellow dot.
+    let isHighlighted: Bool
+    /// Grey, e.g. the bus has already been there.
+    let isDimmed: Bool
+    let isFirst: Bool
+    let isLast: Bool
+
+    var body: some View {
+        let colour = isDimmed ? Color.gray.opacity(0.5) : Color.appTint
+        ZStack {
+            VStack(spacing: 0) {
+                Rectangle().fill(isFirst ? .clear : colour).frame(width: 4)
+                Rectangle().fill(isLast ? .clear : colour).frame(width: 4)
+            }
+            Circle()
+                .fill(isHighlighted ? TFIColors.yellow : .white)
+                .stroke(colour, lineWidth: 3)
+                .frame(width: isHighlighted ? 18 : 13, height: isHighlighted ? 18 : 13)
+        }
+        .frame(width: 20)
     }
 }

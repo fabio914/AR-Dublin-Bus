@@ -153,9 +153,35 @@ actor DepartureService {
             try timetable.tripDetails(tripID: reference.tripID)
         }.value
         guard let details else { throw DepartureServiceError.unknownTrip }
+        async let vehicles = vehicleSnapshot(now: now)
         let (realtime, realtimeIssue) = await realtimeSnapshot(now: now)
         return TripJourney.make(details: details, reference: reference, realtime: realtime,
-                                realtimeIssue: realtimeIssue, now: now)
+                                realtimeIssue: realtimeIssue, vehicles: await vehicles, now: now)
+    }
+
+    /// A route's stops, paths and timetable from a stop, for the line screen.
+    func line(_ reference: LineReference) async throws -> LineDetails {
+        let timetable = try await timetableStore.loadedTimetable()
+        let details = try await Task.detached(priority: .userInitiated) {
+            try timetable.lineDetails(routeID: reference.routeID, stopCode: reference.stopCode)
+        }.value
+        guard let details else { throw DepartureServiceError.unknownStop(reference.stopCode) }
+        return details
+    }
+
+    /// The buses running `tripIDs` right now, for the line screen's map. `nil` when positions
+    /// are unavailable.
+    func vehicles(forTripIDs tripIDs: Set<String>, now: Date = .now) async -> [VehiclePosition]? {
+        guard let snapshot = await vehicleSnapshot(now: now) else { return nil }
+        return snapshot.positions(forTripIDs: tripIDs).filter { position in
+            let measured = position.timestamp ?? snapshot.feedTimestamp ?? snapshot.fetchedAt
+            return now.timeIntervalSince(measured) <= TripJourney.maximumVehicleAge
+        }
+    }
+
+    /// Bus positions are a bonus: without them the screens still show live times.
+    private func vehicleSnapshot(now: Date) async -> VehicleSnapshot? {
+        try? await realtimeClient.vehicles(now: now)
     }
 
     private func realtimeSnapshot(now: Date) async -> (RealtimeSnapshot?, String?) {
