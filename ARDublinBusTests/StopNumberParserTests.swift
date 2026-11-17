@@ -16,6 +16,14 @@ struct StopNumberParserTests {
         #expect(StopNumberParser.stopNumber(in: text) == expected)
     }
 
+    @Test func findsTheWholeLabel() throws {
+        let text = "Bus Stop 271 here"
+        let label = try #require(StopNumberParser.label(in: text))
+        #expect(label.number == "271")
+        #expect(text[label.range] == "Stop 271")
+        #expect(StopNumberParser.label(in: "15a 15b 44") == nil)
+    }
+
     @Test func doesNotTurnWordsIntoNumbers() {
         #expect(StopNumberParser.stopNumber(in: ["Stop Sd Uí Chonaill"]) == nil)
         #expect(StopNumberParser.stopNumber(in: ["Bus Stop"]) == nil)
