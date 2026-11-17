@@ -49,40 +49,31 @@ struct LineColour {
     }
 }
 
-/// Where every line goes from the stop, each in its own colour. With a line selected, only
-/// that line is shown and the map zooms to it.
+/// Where every line goes from the stop, each in its own colour.
 struct StopLinesMap: View {
     let overview: StopLines
     let colours: [String: LineColour]
-    let selectedLineID: String?
     @State private var position: MapCameraPosition
 
-    init(overview: StopLines, colours: [String: LineColour], selectedLineID: String?) {
+    init(overview: StopLines, colours: [String: LineColour]) {
         self.overview = overview
         self.colours = colours
-        self.selectedLineID = selectedLineID
         _position = State(initialValue: Self.cameraPosition(for: overview.lines, stop: overview.stop))
     }
 
     var body: some View {
         Map(position: $position) {
-            ForEach(visibleLines) { line in
+            ForEach(overview.lines) { line in
                 let colour = colours[line.id]?.fill ?? Color.appTint
                 ForEach(Array(line.paths.enumerated()), id: \.offset) { _, path in
                     MapPolyline(coordinates: path)
-                        .stroke(colour, style: StrokeStyle(lineWidth: selectedLineID == nil ? 4 : 6, lineCap: .round, lineJoin: .round))
+                        .stroke(colour, style: StrokeStyle(lineWidth: 4, lineCap: .round, lineJoin: .round))
                 }
             }
 
             if let coordinate = overview.stop.coordinate {
-                Annotation(overview.stop.name, coordinate: coordinate) {
-                    Image(systemName: "bus.fill")
-                        .font(.system(size: 13, weight: .bold))
-                        .foregroundStyle(TFIColors.ink)
-                        .frame(width: 28, height: 28)
-                        .background(TFIColors.yellow, in: Circle())
-                        .overlay(Circle().stroke(.white, lineWidth: 2))
-                        .shadow(radius: 2)
+                Annotation(overview.stop.name, coordinate: coordinate, anchor: .center) {
+                    YourStopMarker()
                 }
                 .annotationTitles(.hidden)
             }
@@ -94,18 +85,6 @@ struct StopLinesMap: View {
             MapUserLocationButton()
             MapCompass()
         }
-        .onChange(of: selectedLineID) { _, id in
-            let lines = overview.lines.filter { $0.id == id }
-            withAnimation {
-                position = Self.cameraPosition(for: lines.isEmpty ? overview.lines : lines, stop: overview.stop)
-            }
-        }
-    }
-
-    /// Every line, or only the selected one.
-    private var visibleLines: [StopLine] {
-        guard let selectedLineID else { return overview.lines }
-        return overview.lines.filter { $0.id == selectedLineID }
     }
 
     /// Every path of `lines` and the stop, with some padding.
@@ -121,7 +100,8 @@ struct StopLinesMap: View {
 }
 
 /// Every line leaving the stop, whether or not a bus is due: a map of where each goes, then
-/// the lines in the map's colours with their next bus. Tapping a line shows it alone on the map.
+/// the lines in the map's colours with their next bus. Tapping a line opens its line screen
+/// (inside a `NavigationStack` using `routeDestinations()`).
 struct StopLinesCard: View {
     /// `nil` while loading.
     let overview: StopLines?
@@ -129,7 +109,6 @@ struct StopLinesCard: View {
     /// For each line's next bus; `nil` while loading.
     let board: StopBoard?
     let now: Date
-    @Binding var selectedLineID: String?
 
     static let mapHeight: CGFloat = 240
 
@@ -140,12 +119,12 @@ struct StopLinesCard: View {
                 if overview.lines.isEmpty {
                     PanelMessage(icon: "moon.zzz.fill", title: "No routes leave from this stop")
                 } else {
-                    StopLinesMap(overview: overview, colours: colours, selectedLineID: selectedLineID)
+                    StopLinesMap(overview: overview, colours: colours)
                         .frame(height: Self.mapHeight)
-                    lineRows(overview.lines, colours: colours)
+                    lineRows(overview.lines, colours: colours, stopCode: overview.stop.code)
                     PanelFooter {
                         Image(systemName: "hand.tap")
-                        Text(selectedLineID == nil ? "Tap a line to show it alone on the map" : "Tap it again to show every line")
+                        Text("Tap a line for its stops and timetable")
                     }
                 }
             } else if let error {
@@ -164,20 +143,13 @@ struct StopLinesCard: View {
         return "\(count) route\(count == 1 ? "" : "s") from this stop"
     }
 
-    private func lineRows(_ lines: [StopLine], colours: [String: LineColour]) -> some View {
+    private func lineRows(_ lines: [StopLine], colours: [String: LineColour], stopCode: String) -> some View {
         VStack(spacing: 0) {
             ForEach(Array(lines.enumerated()), id: \.element.id) { index, line in
                 if index > 0 { PanelSeparator() }
-                Button {
-                    withAnimation { selectedLineID = selectedLineID == line.id ? nil : line.id }
-                } label: {
-                    StopLineRow(
-                        line: line,
-                        colour: colours[line.id],
-                        nextBus: nextBusText(for: line),
-                        isSelected: selectedLineID == line.id
-                    )
-                    .contentShape(Rectangle())
+                NavigationLink(value: LineReference(routeID: line.route.id, stopCode: stopCode)) {
+                    StopLineRow(line: line, colour: colours[line.id], nextBus: nextBusText(for: line))
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
             }
@@ -201,7 +173,6 @@ private struct StopLineRow: View {
     let line: StopLine
     let colour: LineColour?
     let nextBus: String?
-    let isSelected: Bool
 
     var body: some View {
         HStack(spacing: 12) {
@@ -227,15 +198,13 @@ private struct StopLineRow: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
 
-            Image(systemName: isSelected ? "eye.fill" : "eye")
-                .font(.system(size: 15, weight: .semibold))
-                .foregroundStyle(isSelected ? Color.appTint : Color.cardSecondaryInk.opacity(0.6))
+            Image(systemName: "chevron.right")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(Color.cardSecondaryInk.opacity(0.6))
         }
         .padding(.horizontal, PanelMetrics.horizontalPadding)
         .padding(.vertical, 9)
-        .background(isSelected ? (colour?.fill ?? TFIColors.yellow).opacity(0.15) : .clear)
         .accessibilityElement(children: .combine)
-        .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 
     private var destinations: String {

@@ -66,7 +66,7 @@ struct StopLookupView: View {
             .navigationBarTitleDisplayMode(.inline)
             .navigationDestination(for: FavouriteStop.self) { StopBoardScreen(stopCode: $0.code) }
             .navigationDestination(for: StopSearchResult.self) { StopBoardScreen(stopCode: $0.stop.code) }
-            .tripDestination()
+            .routeDestinations()
         }
         .task(id: query) {
             guard !query.isEmpty else {

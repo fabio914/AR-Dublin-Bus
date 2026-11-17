@@ -1,6 +1,6 @@
 import Foundation
 
-// Mirror of the GTFS-Realtime `FeedMessage` (TripUpdates only). The app reads the NTA's
+// Mirror of the GTFS-Realtime `FeedMessage` (TripUpdates and VehiclePositions). The app reads the NTA's
 // GTFS-R API as protobuf (see GTFSRealtimeProtobuf.swift); the JSON decoding here reads the
 // same feed with `?format=json`, which is easier to write by hand for tests.
 //
@@ -22,11 +22,20 @@ struct GTFSRFeedMessage: Decodable, Sendable {
         let id: String?
         let isDeleted: Bool?
         let tripUpdate: GTFSRTripUpdate?
+        let vehicle: GTFSRVehiclePosition?
+
+        init(id: String?, isDeleted: Bool?, tripUpdate: GTFSRTripUpdate?, vehicle: GTFSRVehiclePosition? = nil) {
+            self.id = id
+            self.isDeleted = isDeleted
+            self.tripUpdate = tripUpdate
+            self.vehicle = vehicle
+        }
 
         enum CodingKeys: String, CodingKey {
             case id
             case isDeleted = "isdeleted"
             case tripUpdate = "tripupdate"
+            case vehicle
         }
     }
 
@@ -89,6 +98,27 @@ struct GTFSRTripUpdate: Decodable, Sendable {
         let time: FlexibleInt?
 
         enum CodingKeys: String, CodingKey { case delay, time }
+    }
+}
+
+/// Where a bus is (the `Vehicles` endpoint).
+struct GTFSRVehiclePosition: Decodable, Sendable {
+    let trip: GTFSRTripUpdate.TripDescriptor?
+    let position: Position?
+    /// When the position was measured (POSIX seconds).
+    let timestamp: FlexibleInt?
+    let vehicle: Descriptor?
+
+    struct Position: Decodable, Sendable, Equatable {
+        let latitude: Double
+        let longitude: Double
+        /// Degrees clockwise from north.
+        let bearing: Double?
+    }
+
+    struct Descriptor: Decodable, Sendable {
+        let id: String?
+        let label: String?
     }
 }
 

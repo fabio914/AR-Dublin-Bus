@@ -6,7 +6,7 @@ struct DeparturesPanelView: View {
     let content: PanelContent
     let now: Date
     var maximumRows = 6
-    /// Rows open the bus's line when tapped (inside a `NavigationStack` using `tripDestination()`).
+    /// Rows open the bus's line when tapped (inside a `NavigationStack` using `routeDestinations()`).
     var linksToTrips = false
     /// A star in the header for starring the stop (in-app boards only).
     var favourite: PanelHeader.Favourite?

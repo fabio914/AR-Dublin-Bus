@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// One stop: green header with a star, its next few buses, and a link to the full board.
-/// Use inside a `NavigationStack` with `tripDestination()` and a destination for `Destination`.
+/// Use inside a `NavigationStack` with `routeDestinations()` and a destination for `Destination`.
 struct StopSummaryCard<Destination: Hashable>: View {
     @Environment(AppModel.self) private var model
     let code: String

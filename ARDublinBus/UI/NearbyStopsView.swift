@@ -114,7 +114,7 @@ struct NearbyStopsView: View {
                 }
             }
             .navigationDestination(for: NearbyStop.self) { StopBoardScreen(stopCode: $0.stop.code) }
-            .tripDestination()
+            .routeDestinations()
         }
         .task(id: runID) {
             let model = self.model ?? NearbyStopsModel(service: appModel.service)

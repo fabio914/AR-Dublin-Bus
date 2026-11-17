@@ -49,6 +49,48 @@ struct RealFeedTests {
         #expect(RealtimeSnapshot(feed: json).tripCount == RealtimeSnapshot(feed: decoded).tripCount)
     }
 
+    /// Needs `TEST_RUNNER_VEHICLES_JSON` and `TEST_RUNNER_VEHICLES_PROTOBUF`: the same
+    /// `Vehicles` feed saved in both formats, fetched within a few seconds of each other.
+    @Test(.enabled(if: ProcessInfo.processInfo.environment["VEHICLES_JSON"] != nil
+                   && ProcessInfo.processInfo.environment["VEHICLES_PROTOBUF"] != nil))
+    func vehiclePositionsMatchJSON() throws {
+        let environment = ProcessInfo.processInfo.environment
+        let json = try GTFSRFeedMessage.decode(from: Data(contentsOf: URL(fileURLWithPath: environment["VEHICLES_JSON"]!)))
+        let protobuf = try GTFSRFeedMessage.decode(protobuf: Data(contentsOf: URL(fileURLWithPath: environment["VEHICLES_PROTOBUF"]!)))
+        try #require(json.header?.timestamp == protobuf.header?.timestamp, "The files are from different fetches")
+
+        func summaries(_ feed: GTFSRFeedMessage) -> [String: String] {
+            var result: [String: String] = [:]
+            for entity in feed.entity ?? [] {
+                guard let vehicle = entity.vehicle else { continue }
+                let bearing = vehicle.position?.bearing.map { String(format: "%.0f", $0) } ?? "-"
+                result[entity.id ?? "?"] = "\(vehicle.trip?.tripID ?? "") \(vehicle.trip?.startDate ?? "") \(bearing)"
+                    + " \(vehicle.timestamp?.value ?? 0) \(vehicle.vehicle?.id ?? "")"
+            }
+            return result
+        }
+        func positions(_ feed: GTFSRFeedMessage) -> [String: GTFSRVehiclePosition.Position] {
+            Dictionary(uniqueKeysWithValues: (feed.entity ?? []).compactMap { entity in
+                entity.vehicle?.position.map { (entity.id ?? "?", $0) }
+            })
+        }
+        let fromProtobuf = summaries(protobuf)
+        print("Vehicles: \(fromProtobuf.count) positions")
+        #expect(!fromProtobuf.isEmpty)
+        #expect(summaries(json) == fromProtobuf)
+
+        // Positions are floats in protobuf and decimals in JSON: equal to about a metre.
+        let jsonPositions = positions(json)
+        let protobufPositions = positions(protobuf)
+        #expect(Set(jsonPositions.keys) == Set(protobufPositions.keys))
+        let mismatched = jsonPositions.filter { id, position in
+            guard let other = protobufPositions[id] else { return false }
+            return abs(position.latitude - other.latitude) > 1e-5 || abs(position.longitude - other.longitude) > 1e-5
+        }
+        #expect(mismatched.isEmpty)
+        #expect(VehicleSnapshot(feed: json).vehicleCount == VehicleSnapshot(feed: protobuf).vehicleCount)
+    }
+
     /// Everything the app reads from each entity, as text, by entity ID.
     private static func summaries(_ feed: GTFSRFeedMessage) -> [String: String] {
         func event(_ event: GTFSRTripUpdate.StopTimeEvent?) -> String {

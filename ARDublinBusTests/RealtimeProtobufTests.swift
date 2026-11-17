@@ -120,7 +120,21 @@ struct RealtimeProtobufTests {
         }
         feed.message(2) { entity in
             entity.string(1, "V1")
-            entity.message(4) { vehicle in vehicle.string(1, "a vehicle position") } // ignored
+            entity.message(4) { vehicle in
+                vehicle.message(1) { trip in
+                    trip.string(1, "T1")
+                    trip.string(3, "20261116")
+                }
+                vehicle.message(2) { position in
+                    position.fixed32(1, Float(53.3486).bitPattern)
+                    position.fixed32(2, Float(-6.2595).bitPattern)
+                    position.fixed32(3, Float(270).bitPattern)
+                    position.fixed32(5, Float(8.5).bitPattern) // speed: ignored
+                }
+                vehicle.varint(3, 10) // current_stop_sequence: ignored
+                vehicle.varint(5, 1_763_279_990)
+                vehicle.message(8) { descriptor in descriptor.string(1, "42") }
+            }
         }
     }
 
@@ -150,6 +164,29 @@ struct RealtimeProtobufTests {
         #expect(feed.entity?[2].tripUpdate?.stopTimeUpdate?.first?.arrival?.time?.value == 1_763_280_900)
         #expect(feed.entity?[3].isDeleted == true)
         #expect(feed.entity?[4].tripUpdate == nil)
+    }
+
+    @Test func decodesVehiclePositions() throws {
+        let feed = try GTFSRFeedMessage.decode(protobuf: Self.feed)
+        let vehicle = try #require(feed.entity?[4].vehicle)
+        #expect(vehicle.trip?.tripID == "T1")
+        let position = try #require(vehicle.position)
+        #expect(abs(position.latitude - 53.3486) < 1e-5)
+        #expect(abs(position.longitude - -6.2595) < 1e-5)
+        #expect(position.bearing == 270)
+        #expect(vehicle.timestamp?.value == 1_763_279_990)
+        #expect(vehicle.vehicle?.id == "42")
+        // Trip updates carry no position.
+        #expect(feed.entity?[0].vehicle == nil)
+
+        let snapshot = VehicleSnapshot(feed: feed)
+        #expect(snapshot.vehicleCount == 1)
+        let found = try #require(snapshot.position(forTripID: "T1", serviceDate: GTFSDate(year: 2026, month: 11, day: 16)))
+        #expect(found.vehicleID == "42")
+        #expect(found.timestamp == Date(timeIntervalSince1970: 1_763_279_990))
+        // The same trip on another day is another bus.
+        #expect(snapshot.position(forTripID: "T1", serviceDate: GTFSDate(year: 2026, month: 11, day: 17)) == nil)
+        #expect(snapshot.positions(forTripIDs: ["T1", "T4"]).map(\.tripID) == ["T1"])
     }
 
     @Test func snapshotMatchesTheJSONFeed() throws {
