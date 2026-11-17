@@ -23,13 +23,19 @@ enum StopNumberParser {
     }
 
     private static func numberAfterKeyword(in text: String) -> String? {
+        label(in: text)?.number
+    }
+
+    /// The first "Stop 1234" label in `text`: its stop number, and where the whole label is
+    /// (keyword and number), for boxing it in the image.
+    static func label(in text: String) -> (number: String, range: Range<String.Index>)? {
         let pattern = /(?i)\b(?:st[o0]p|stad)\s*(?:no\.?|number)?\s*[:#]?\s*([0-9OoIlSB]{1,8})\b/
         guard let match = text.firstMatch(of: pattern) else { return nil }
         let token = String(match.1)
         // "Stop Sd…" must not turn into stop 5: the token has to be mostly real digits.
         let digits = token.filter(\.isNumber).count
-        guard digits * 2 > token.count else { return nil }
-        return normalize(token)
+        guard digits * 2 > token.count, let number = normalize(token) else { return nil }
+        return (number, match.range)
     }
 
     private static func standaloneNumbers(in text: String) -> [String] {

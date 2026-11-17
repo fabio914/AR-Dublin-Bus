@@ -5,8 +5,8 @@ import SwiftUI
 /// into an unlit texture so it stays crisp and readable in any lighting.
 @MainActor
 final class DeparturesPanelEntity: Entity {
-    /// Width of the panel in the world, in metres.
-    static let worldWidth: Float = 0.42
+    /// Width of the panel in the world, in metres: a little wider than the 50 cm sign.
+    static let worldWidth: Float = 0.6
 
     private let plane = ModelEntity()
     private(set) var worldHeight: Float = 0
@@ -36,10 +36,10 @@ final class DeparturesPanelEntity: Entity {
         )
     }
 
-    /// Rotates the panel (in world space) so its front faces `cameraPosition`, keeping it upright.
-    func face(cameraPosition: SIMD3<Float>) {
-        turnToFace(cameraPosition)
-    }
+    /// The panel's orientation lying on a sign, relative to its anchor (laid out like an image
+    /// anchor: x right, y out of the sign, z down the sign). The plane faces +z and its top is +y,
+    /// so a quarter turn about x makes it face out of the sign with its top up the sign.
+    static let onSign = simd_quatf(angle: -.pi / 2, axis: SIMD3(1, 0, 0))
 }
 
 extension Entity {

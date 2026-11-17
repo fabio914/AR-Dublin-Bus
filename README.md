@@ -89,8 +89,14 @@ Then open the Map or Nearby, or search for stop 271.
 `ARWorldTrackingConfiguration` looks for `ARDublinBus/Resources/BusStopIcon.png`, the white bus
 on the green panel at the top of every TFI stop flag. The NTA doesn't publish this artwork, so
 the reference image was cut from a photo of a stop flag, perspective-corrected and cleaned into
-two tones. ARKit's `automaticImageScaleEstimationEnabled` corrects the assumed physical width of
-0.35 m (`BusStopSign.physicalWidth`).
+two tones. Its physical width, 0.43 m (`BusStopSign.physicalWidth`), was measured on real flags
+(about 50 × 90 cm), and ARKit's `automaticImageScaleEstimationEnabled` refines it.
+
+The app also searches the whole camera frame for a "Stop 1234" label every 0.7 s while no sign
+is known. Vision reads it further away, at night and at steeper angles than ARKit detects the
+pictogram. The sign is then placed from the label's position and size (`SignLayout`), facing the
+camera, and the departures panel appears straight away. If ARKit finds the pictogram later, its
+anchor takes over and keeps the stop.
 
 ### 2. Reading the stop number
 
@@ -101,8 +107,9 @@ The "Stop 271" line sits just below the pictogram. The app:
 3. reads it with Vision (`VNRecognizeTextRequest`);
 4. accepts a number once it has been read twice and exists in the timetable.
 
-If the tight crop keeps failing, a wider region is read as well. From that region, only a number
-after "Stop" (or the Irish "Stad") is accepted, so route numbers aren't mistaken for the stop.
+If the tight crop keeps failing, every third attempt searches the whole frame instead. There,
+only a number after "Stop" (or the Irish "Stad") is accepted, so route numbers aren't mistaken
+for the stop.
 
 ### 3. Fetching departures
 
@@ -205,16 +212,19 @@ Some extra checks run against real data when these environment variables are set
 | `TEST_RUNNER_GTFS_DIR` | An extracted Dublin Bus GTFS folder. The tests build the database from it and compare it with `stop_times.txt`. |
 | `TEST_RUNNER_REALTIME_JSON` | A saved `TripUpdates?format=json` response. |
 | `TEST_RUNNER_REALTIME_PROTOBUF` | The same feed saved as `TripUpdates?format=protobuf`, fetched within seconds of the JSON. The tests check that both decode to the same updates. |
-| `TEST_RUNNER_SIGN_PHOTO` | An upright photo of a stop flag. |
-| `TEST_RUNNER_SIGN_QUAD` | Corners of the "Stop …" line in that photo, in pixels: `tlx,tly,trx,try,brx,bry,blx,bly`. |
+| `TEST_RUNNER_SIGN_PHOTO` | An upright photo of a stop flag. With `TEST_RUNNER_SIGN_STOP`, the tests search the whole photo for the label. |
+| `TEST_RUNNER_SIGN_QUAD` | Corners of the "Stop …" line in that photo, in pixels: `tlx,tly,trx,try,brx,bry,blx,bly`, to also read just that region. |
 | `TEST_RUNNER_SIGN_STOP` | The stop number on the photo. |
 | `TEST_RUNNER_RENDER_DIR` | A folder to save PNG renders of the panel. |
 
 ## Tuning on a real sign
 
-- `BusStopSign.physicalWidth`: measure the green panel's width for better first placement.
+- `SignLayout`: the flag's measurements (green panel width, where the "Stop 1234" label is and
+  how big). `BusStopSign.physicalWidth` follows the panel width.
 - `BusStopSign.stopNumberRegion`: where the stop number sits relative to the pictogram.
-- `ARCoordinator.layoutPanel`: where the board floats relative to the sign.
+- `SignLayout.cardBelowSign`, `SignLayout.cardInFront` and `DeparturesPanelEntity.worldWidth`:
+  where the departures card hangs (20 cm below the sign, 10 cm in front, flat in the sign's
+  plane) and how big it is (60 cm wide).
 
 ## Ideas
 

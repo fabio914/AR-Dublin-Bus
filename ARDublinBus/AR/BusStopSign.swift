@@ -10,10 +10,10 @@ import UIKit
 enum BusStopSign {
     static let referenceImageName = "BusStopIcon"
 
-    /// Approximate printed width of the green panel, in metres. ARKit uses this to
-    /// judge distance; `automaticImageScaleEstimationEnabled` corrects it at runtime,
-    /// but measuring a real sign and updating this improves the initial placement.
-    static let physicalWidth: CGFloat = 0.35
+    /// Printed width of the green panel, in metres (see `SignLayout`). ARKit uses it to judge
+    /// distance; `automaticImageScaleEstimationEnabled` refines it at runtime. It used to be
+    /// 0.35 m, 19% short, which put new anchors too close until ARKit corrected itself.
+    static let physicalWidth = CGFloat(SignLayout.panelWidth)
 
     /// A region of the sign below (positive) or above (negative) the reference image,
     /// in multiples of the reference image's height, centred horizontally.
@@ -26,12 +26,9 @@ enum BusStopSign {
         let widthFactor: Float
     }
 
-    /// The "Stop 271" line, with some margin for scale errors.
+    /// The "Stop 271" line, with some margin for scale errors. On measured signs the label
+    /// spans about 0.01–0.25 of the reference image's height below it.
     static let stopNumberRegion = Region(top: -0.02, bottom: 0.42, widthFactor: 1.1)
-
-    /// A generous fallback region (includes the stop name and route numbers, so
-    /// only text preceded by "Stop" is accepted from it).
-    static let widerRegion = Region(top: -0.1, bottom: 1.1, widthFactor: 1.5)
 
     static func makeReferenceImages() -> Set<ARReferenceImage> {
         guard let image = UIImage(named: referenceImageName)?.cgImage else {
