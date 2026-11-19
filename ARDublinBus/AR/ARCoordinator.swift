@@ -6,11 +6,13 @@ import UIKit
 /// panel anchored to the sign. Nearby stops are shown as floating labels by `ARStopsController`.
 ///
 /// A sign is found in two ways:
-/// - ARKit detects the bus pictogram (`BusStopSign`), and the "Stop 1234" line under it is read.
-/// - The whole camera frame is searched for a "Stop 1234" label, and the sign is placed from the
+/// - ARKit detects the bus pictogram on a TFI flag (`BusStopSign`), and the "Stop 1234" line
+///   under it is read.
+/// - The whole camera frame is searched for a stop number label, and the sign is placed from the
 ///   label's position and size (`SignLayout`). This works further away, at night and at steeper
-///   angles than ARKit's image detection. If ARKit finds the pictogram later, its anchor takes
-///   over, keeping the stop.
+///   angles than ARKit's image detection, and also finds the round signs (`SignKind`), which ARKit
+///   doesn't look for. If ARKit finds a flag's pictogram later, its anchor takes over, keeping
+///   the stop.
 ///
 /// The session uses geo tracking (`ARGeoTrackingConfiguration`) where Apple supports it,
 /// and world tracking aligned with gravity and the compass everywhere else.
@@ -41,7 +43,7 @@ final class ARCoordinator: NSObject, ARSessionDelegate {
 
     /// Seconds between OCR attempts while the stop number is unknown.
     private let readInterval: TimeInterval = 0.35
-    /// Seconds between whole-frame searches for a "Stop 1234" label while no sign is known.
+    /// Seconds between whole-frame searches for a stop number label while no sign is known.
     private let labelSearchInterval: TimeInterval = 0.7
     /// The same, once a sign has been placed from a label: watching for a different stop.
     private let labelWatchInterval: TimeInterval = 2
@@ -57,32 +59,26 @@ final class ARCoordinator: NSObject, ARSessionDelegate {
         let anchorID: UUID
         /// Detected by ARKit (it follows the image), rather than placed from a "Stop" label.
         let isImageAnchored: Bool
+        let kind: SignKind
         /// Fixed in the world, so the card stays put and visible when the sign is out of view.
         /// (Content attached to an image anchor may be hidden while ARKit isn't tracking the image.)
         let anchorEntity = AnchorEntity(world: matrix_identity_float4x4)
-        /// The sign's reference image, in the axes of an image anchor (x right, y out of the
-        /// sign, z down the sign). Moved to follow ARKit while it tracks the image.
+        /// The sign's origin (`SignLayout.LabelMetrics`), in the axes of an image anchor (x right,
+        /// y out of the sign, z down the sign). Moved to follow ARKit while it tracks the image.
         let root = Entity()
         let panel: DeparturesPanelEntity
-        let highlight: ModelEntity
         var stopCode: String?
         var recognisedAt: SIMD3<Float>?
         /// The reference image's size on this sign, in metres.
         var size: SIMD2<Float>
         var firstSeen = Date()
 
-        init(anchorID: UUID, isImageAnchored: Bool, transform: simd_float4x4, size: SIMD2<Float>) {
+        init(anchorID: UUID, isImageAnchored: Bool, kind: SignKind, transform: simd_float4x4, size: SIMD2<Float>) {
             self.anchorID = anchorID
             self.isImageAnchored = isImageAnchored
+            self.kind = kind
             self.size = size
             anchorEntity.addChild(root)
-
-            // A translucent overlay on the pictogram confirms the detection.
-            var material = UnlitMaterial(color: UIColor(red: 1, green: 0.82, blue: 0, alpha: 1))
-            material.blending = .transparent(opacity: .init(floatLiteral: 0.25))
-            highlight = ModelEntity(mesh: Self.highlightMesh(size), materials: [material])
-            highlight.position.y = 0.002
-            root.addChild(highlight)
 
             panel = DeparturesPanelEntity()
             root.addChild(panel)
@@ -92,10 +88,6 @@ final class ARCoordinator: NSObject, ARSessionDelegate {
         /// Moves the sign to `transform` (world space, in the axes of an image anchor).
         func place(_ transform: simd_float4x4) {
             root.setTransformMatrix(transform, relativeTo: nil)
-        }
-
-        static func highlightMesh(_ size: SIMD2<Float>) -> MeshResource {
-            .generatePlane(width: size.x, depth: size.y, cornerRadius: size.x * 0.04)
         }
     }
 
@@ -292,7 +284,7 @@ final class ARCoordinator: NSObject, ARSessionDelegate {
         }
         removeSign()
 
-        let newSign = TrackedSign(anchorID: anchor.identifier, isImageAnchored: true, transform: anchor.transform,
+        let newSign = TrackedSign(anchorID: anchor.identifier, isImageAnchored: true, kind: .flag, transform: anchor.transform,
                                   size: anchor.estimatedPhysicalSize)
         arView.scene.addAnchor(newSign.anchorEntity)
         sign = newSign
@@ -331,21 +323,16 @@ final class ARCoordinator: NSObject, ARSessionDelegate {
         // Follow the image while ARKit sees it; otherwise the sign stays where it was last seen.
         if anchor.isTracked { sign.place(anchor.transform) }
 
-        // Follow ARKit's scale estimate, without rebuilding the mesh on every tiny change.
-        let size = anchor.estimatedPhysicalSize
-        if abs(size.x - sign.size.x) > sign.size.x * 0.02 {
-            sign.size = size
-            sign.highlight.model?.mesh = TrackedSign.highlightMesh(size)
-        }
+        sign.size = anchor.estimatedPhysicalSize // ARKit's scale estimate
         layoutPanel()
     }
 
-    /// Places a sign found from its "Stop 1234" label, already knowing its stop.
-    private func placeSign(_ transform: simd_float4x4, stopCode: String) {
+    /// Places a sign found from its stop number label, already knowing its stop.
+    private func placeSign(_ transform: simd_float4x4, kind: SignKind, stopCode: String) {
         guard let arView else { return }
         removeSign()
 
-        let newSign = TrackedSign(anchorID: UUID(), isImageAnchored: false, transform: transform,
+        let newSign = TrackedSign(anchorID: UUID(), isImageAnchored: false, kind: kind, transform: transform,
                                   size: SignLayout.referenceSize)
         arView.scene.addAnchor(newSign.anchorEntity)
         sign = newSign
@@ -365,7 +352,7 @@ final class ARCoordinator: NSObject, ARSessionDelegate {
     /// in the sign's plane, so it's seen at an angle like the sign itself.
     private func layoutPanel() {
         guard let sign else { return }
-        sign.panel.position = SignLayout.cardCenter(referenceSize: sign.size, cardHeight: sign.panel.worldHeight)
+        sign.panel.position = SignLayout.cardCenter(kind: sign.kind, referenceSize: sign.size, cardHeight: sign.panel.worldHeight)
         sign.panel.orientation = DeparturesPanelEntity.onSign
     }
 
@@ -461,7 +448,7 @@ final class ARCoordinator: NSObject, ARSessionDelegate {
         let intrinsics: simd_float3x3
     }
 
-    /// Looks for "Stop 1234" labels anywhere in the frame, at most every `interval` seconds.
+    /// Looks for stop number labels anywhere in the frame, at most every `interval` seconds.
     private func searchForLabels(in frame: ARFrame, interval: TimeInterval) {
         guard !isReading, frame.timestamp - lastLabelSearch >= interval else { return }
         // Placing a sign needs a reliable camera pose.
@@ -507,7 +494,7 @@ final class ARCoordinator: NSObject, ARSessionDelegate {
         // The sign already placed from this label, or a misreading of it.
         if let sign, let at = sign.recognisedAt, simd_distance(at, transform.translation) < newSignDistance { return }
         guard let accepted = recordReading(label.number) else { return }
-        placeSign(transform, stopCode: accepted)
+        placeSign(transform, kind: label.kind, stopCode: accepted)
     }
 
     /// Projects a sign region into the camera image (pixel coordinates of `capturedImage`).

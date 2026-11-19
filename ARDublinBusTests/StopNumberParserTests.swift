@@ -24,6 +24,25 @@ struct StopNumberParserTests {
         #expect(StopNumberParser.label(in: "15a 15b 44") == nil)
     }
 
+    /// Round signs print "Stop" or "STOP NO." on one line and the number on the next.
+    @Test func readsTwoLineLabels() {
+        #expect(StopNumberParser.keywordLine("Stop") == .stop)
+        #expect(StopNumberParser.keywordLine("St0p ") == .stop)
+        #expect(StopNumberParser.keywordLine("Stad") == .stop)
+        #expect(StopNumberParser.keywordLine("STOP NO.") == .stopNumber)
+        #expect(StopNumberParser.keywordLine("Stop No") == .stopNumber)
+        #expect(StopNumberParser.keywordLine("Stop 271") == nil)
+        #expect(StopNumberParser.keywordLine("Bus Stop") == nil)
+        #expect(StopNumberParser.keywordLine("Stopping") == nil)
+
+        #expect(StopNumberParser.numberLine("2383") == "2383")
+        #expect(StopNumberParser.numberLine(" 2O02 ") == "2002")
+        #expect(StopNumberParser.numberLine("2OO2") == nil) // as many letters as digits
+        #expect(StopNumberParser.numberLine("SOS") == nil)
+        #expect(StopNumberParser.numberLine("44d") == nil)
+        #expect(StopNumberParser.numberLine("15 44") == nil)
+    }
+
     @Test func doesNotTurnWordsIntoNumbers() {
         #expect(StopNumberParser.stopNumber(in: ["Stop Sd Uí Chonaill"]) == nil)
         #expect(StopNumberParser.stopNumber(in: ["Bus Stop"]) == nil)

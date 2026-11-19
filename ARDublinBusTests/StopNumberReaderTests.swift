@@ -117,13 +117,58 @@ struct StopNumberReaderTests {
         #expect(label.quad.width > label.quad.height * 3)
     }
 
+    /// Round signs: the number on its own line under "Stop" or "STOP NO.", in a sideways frame.
+    @Test(arguments: [("Stop", SignKind.greenDisc), ("STOP NO.", .yellowDisc)])
+    func findsTwoLineLabels(keyword: String, kind: SignKind) throws {
+        let upright = UIGraphicsImageRenderer(size: CGSize(width: 1440, height: 1920), format: .init(for: .init(displayScale: 1))).image { context in
+            UIColor.gray.setFill()
+            context.fill(CGRect(x: 0, y: 0, width: 1440, height: 1920))
+            UIColor(red: 0.4, green: 0.75, blue: 0.4, alpha: 1).setFill()
+            context.cgContext.fillEllipse(in: CGRect(x: 470, y: 500, width: 500, height: 500))
+            UIColor(white: 0.97, alpha: 1).setFill()
+            context.fill(CGRect(x: 640, y: 560, width: 160, height: 150)) // a stand-in for the pictogram
+            let font = UIFont.systemFont(ofSize: 80, weight: .bold)
+            for (text, top) in [(keyword, 720.0), ("2383", 810.0)] {
+                let attributes: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: UIColor.white]
+                let width = (text as NSString).size(withAttributes: attributes).width
+                (text as NSString).draw(at: CGPoint(x: 720 - width / 2, y: top), withAttributes: attributes)
+            }
+            // Route numbers well below the sign aren't its number.
+            ("46a" as NSString).draw(at: CGPoint(x: 660, y: 1300), withAttributes: [
+                .font: font, .foregroundColor: UIColor.black,
+            ])
+        }
+        let sideways = CIImage(cgImage: try #require(upright.cgImage)).oriented(.left)
+        let moved = sideways.transformed(by: CGAffineTransform(translationX: -sideways.extent.minX, y: -sideways.extent.minY))
+        let image = try #require(CIContext().createCGImage(moved, from: moved.extent))
+
+        let labels = try StopNumberReader().findStopLabels(in: try Self.pixelBuffer(from: image), orientation: .right)
+        let label = try #require(labels.first, "Found: \(labels.map(\.text))")
+        #expect(labels.count == 1)
+        #expect(label.number == "2383")
+        #expect(label.text == "2383")
+        #expect(label.kind == kind)
+        // The number line's centre, around (720, 860) upright, is at (860, 1440 - 720) in the buffer.
+        #expect(abs(label.quad.center.x - 860) < 30)
+        #expect(abs(label.quad.center.y - 720) < 40)
+        #expect(label.quad.width > label.quad.height * 1.5)
+    }
+
+    @Test func pairsANumberOnlyWithTheLineAboveIt() {
+        let keyword = CGRect(x: 0.40, y: 0.50, width: 0.10, height: 0.05)
+        #expect(StopNumberReader.isNumberLine(CGRect(x: 0.39, y: 0.46, width: 0.12, height: 0.05), below: keyword))
+        #expect(!StopNumberReader.isNumberLine(CGRect(x: 0.39, y: 0.30, width: 0.12, height: 0.05), below: keyword)) // far below
+        #expect(!StopNumberReader.isNumberLine(CGRect(x: 0.52, y: 0.50, width: 0.06, height: 0.05), below: keyword)) // beside it
+        #expect(!StopNumberReader.isNumberLine(CGRect(x: 0.39, y: 0.54, width: 0.12, height: 0.05), below: keyword)) // above
+    }
+
     /// The whole-frame search on a real photo: set `TEST_RUNNER_SIGN_PHOTO` and `TEST_RUNNER_SIGN_STOP`.
     @Test(.enabled(if: ["SIGN_PHOTO", "SIGN_STOP"].allSatisfy { ProcessInfo.processInfo.environment[$0] != nil }))
     func findsStopLabelInRealPhoto() throws {
         let environment = ProcessInfo.processInfo.environment
         let image = try #require(UIImage(contentsOfFile: environment["SIGN_PHOTO"]!)?.cgImage)
         let labels = try StopNumberReader().findStopLabels(in: try Self.pixelBuffer(from: image), orientation: .up)
-        print("Real photo labels:", labels.map(\.text))
+        print("Real photo labels:", labels.map { "\($0.text) (\($0.kind))" })
         #expect(labels.map(\.number).contains(environment["SIGN_STOP"]!))
     }
 }

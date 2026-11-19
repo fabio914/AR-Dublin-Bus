@@ -11,12 +11,16 @@ struct SignLayoutTests {
     private func label(depth: Float, center: CGPoint = CGPoint(x: 960, y: 720)) -> StopLabel {
         let width = CGFloat(1280 * SignLayout.labelCharacterWidth * 8 / depth)
         let height = CGFloat(1280 * SignLayout.labelHeight / depth)
-        return StopLabel(number: "350", text: "Stop 350", quad: ImageQuad(
+        return StopLabel(number: "350", text: "Stop 350", quad: Self.box(center: center, width: width, height: height), kind: .flag)
+    }
+
+    private static func box(center: CGPoint, width: CGFloat, height: CGFloat) -> ImageQuad {
+        ImageQuad(
             topLeft: CGPoint(x: center.x - width / 2, y: center.y - height / 2),
             topRight: CGPoint(x: center.x + width / 2, y: center.y - height / 2),
             bottomRight: CGPoint(x: center.x + width / 2, y: center.y + height / 2),
             bottomLeft: CGPoint(x: center.x - width / 2, y: center.y + height / 2)
-        ))
+        )
     }
 
     @Test func depthFromTheLabelsSize() throws {
@@ -63,7 +67,7 @@ struct SignLayoutTests {
     }
 
     @Test func cardHangsBelowTheSign() {
-        let center = SignLayout.cardCenter(referenceSize: SignLayout.referenceSize, cardHeight: 0.7)
+        let center = SignLayout.cardCenter(kind: .flag, referenceSize: SignLayout.referenceSize, cardHeight: 0.7)
         // The flag's bottom edge is 0.9 - 0.034 m below the green panel's top; the anchor is the
         // reference image's centre, half its height below that top.
         let signBottom: Float = 0.9 - 0.034 - SignLayout.referenceSize.y / 2
@@ -72,8 +76,30 @@ struct SignLayoutTests {
         #expect(abs(center.z - (signBottom + 0.2 + 0.35)) < 0.0001) // top edge 20 cm below the sign
 
         // A sign ARKit judges 10% bigger: the sign scales, the gaps don't.
-        let bigger = SignLayout.cardCenter(referenceSize: SignLayout.referenceSize * 1.1, cardHeight: 0.7)
+        let bigger = SignLayout.cardCenter(kind: .flag, referenceSize: SignLayout.referenceSize * 1.1, cardHeight: 0.7)
         #expect(abs(bigger.z - (signBottom * 1.1 + 0.2 + 0.35)) < 0.0001)
+    }
+
+    /// A round sign's number line, seen head-on from 3 m: its origin is the disc's centre, above
+    /// the number, and the card hangs below the disc.
+    @Test(arguments: [SignKind.greenDisc, .yellowDisc])
+    func placesARoundSignFromItsNumber(kind: SignKind) throws {
+        let metrics = SignLayout.metrics(for: kind)
+        let label = StopLabel(number: "2383", text: "2383", quad: Self.box(
+            center: CGPoint(x: 960, y: 720),
+            width: CGFloat(1280 * metrics.characterWidth * 4 / 3),
+            height: CGFloat(1280 * metrics.height / 3)
+        ), kind: kind)
+        let transform = try #require(SignLayout.signTransform(label: label, cameraTransform: matrix_identity_float4x4,
+                                                               intrinsics: intrinsics))
+        let position = transform.columns.3
+        #expect(abs(position.z + 3) < 0.01)
+        #expect(abs(position.y - metrics.labelBelowOrigin) < 0.001)
+        #expect(metrics.labelBelowOrigin > 0.1 && metrics.labelBelowOrigin < SignLayout.discDiameter / 2)
+
+        // ARKit's estimate of a flag's size doesn't apply to a round sign.
+        let center = SignLayout.cardCenter(kind: kind, referenceSize: SignLayout.referenceSize * 1.1, cardHeight: 0.7)
+        #expect(abs(center.z - (SignLayout.discDiameter / 2 + 0.2 + 0.35)) < 0.0001)
     }
 
     @Test func referenceImageMatchesThePanelWidth() {
