@@ -84,28 +84,27 @@ private struct TripStopsList: View {
     var body: some View {
         ScrollViewReader { proxy in
             ScrollView {
-                PanelCard(title: "To \(journey.headsign)", subtitle: subtitle, icon: "bus.fill") {
-                    if journey.isCancelled {
-                        PanelMessage(icon: "xmark.octagon.fill", title: "This bus is cancelled")
-                    }
-                    VStack(spacing: 0) {
-                        ForEach(Array(journey.stops.enumerated()), id: \.element.id) { index, stop in
-                            TripStopRow(
-                                stop: stop,
-                                isOrigin: stop.sequence == journey.reference.stopSequence,
-                                isFirst: index == 0,
-                                isLast: index == journey.stops.count - 1
-                            )
-                            .id(stop.id)
+                PanelCardStack {
+                    PanelCard(title: "To \(journey.headsign)", subtitle: subtitle, icon: "bus.fill", footer: footer) {
+                        if journey.isCancelled {
+                            PanelMessage(icon: "xmark.octagon.fill", title: "This bus is cancelled")
                         }
+                        VStack(spacing: 0) {
+                            ForEach(Array(journey.stops.enumerated()), id: \.element.id) { index, stop in
+                                TripStopRow(
+                                    stop: stop,
+                                    isOrigin: stop.sequence == journey.reference.stopSequence,
+                                    isFirst: index == 0,
+                                    isLast: index == journey.stops.count - 1
+                                )
+                                .id(stop.id)
+                            }
+                        }
+                        .padding(.vertical, 6)
                     }
-                    .padding(.vertical, 6)
-                    PanelFooter { RealtimeStatusLabel(issue: journey.realtimeIssue, updatedAt: journey.updatedAt) }
                 }
-                .shadow(color: .black.opacity(0.12), radius: 10, y: 3)
-                .padding(16)
+                .padding([.horizontal, .bottom], 16)
             }
-            .stickyPanelHeaders()
             .onAppear {
                 if let origin = journey.origin {
                     proxy.scrollTo(origin.id, anchor: .center)
@@ -117,6 +116,9 @@ private struct TripStopsList: View {
     private var subtitle: String {
         let count = journey.stops.count
         return "Route \(journey.route.shortName) · \(count) stop\(count == 1 ? "" : "s")"
+    }
+    private var footer: PanelFooter<RealtimeStatusLabel> {
+        PanelFooter { RealtimeStatusLabel(issue: journey.realtimeIssue, updatedAt: journey.updatedAt) }
     }
 }
 

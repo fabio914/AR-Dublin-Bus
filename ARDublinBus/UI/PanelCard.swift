@@ -1,83 +1,168 @@
 import SwiftUI
 
 /// The card style shared by the AR panel and the in-app boards: a TFI-green header over a
-/// card body. The body follows light and dark mode (see the `card…` colours); the AR panel
-/// is rendered in light mode.
-struct PanelCard<Content: View>: View {
+/// card body, and an optional footer. The body follows light and dark mode (see the `card…`
+/// colours); the AR panel is rendered in light mode.
+///
+/// Inside a `PanelCardStack` the card is a `Section`, so its header and footer pin to the
+/// scroll view's edges while the body scrolls under them. Anywhere else it's drawn whole.
+/// Either way, don't apply modifiers to it: in a stack they'd apply to each part separately.
+struct PanelCard<Content: View, Footer: View>: View {
     let title: String
     var subtitle: String?
     var accessory: PanelHeader.Accessory?
     var favourite: PanelHeader.Favourite?
     var icon = "bus.fill"
-    @ViewBuilder let content: Content
+    let footer: Footer?
+    let content: Content
 
-    /// Where the header pins inside a scroll view using `stickyPanelHeaders()`; `nil` elsewhere.
-    @Environment(\.panelHeaderPinTop) private var pinTop
-    @State private var headerHeight: CGFloat = 0
-    /// How far the header has slid down the card to stay pinned.
-    @State private var headerOffset: CGFloat = 0
+    @Environment(\.panelCardPins) private var pins
+    @State private var isHeaderPinned = false
+    @State private var isFooterPinned = false
+
+    init(title: String, subtitle: String? = nil, accessory: PanelHeader.Accessory? = nil,
+         favourite: PanelHeader.Favourite? = nil, icon: String = "bus.fill",
+         footer: Footer?, @ViewBuilder content: () -> Content) {
+        self.title = title
+        self.subtitle = subtitle
+        self.accessory = accessory
+        self.favourite = favourite
+        self.icon = icon
+        self.footer = footer
+        self.content = content()
+    }
 
     var body: some View {
-        VStack(spacing: 0) {
-            pinnableHeader
-            content
-        }
-        .frame(maxWidth: .infinity)
-        .background(Color.appCard)
-        .clipShape(RoundedRectangle(cornerRadius: PanelMetrics.cornerRadius, style: .continuous))
-        .onGeometryChange(for: CGFloat.self) { [pinTop, headerHeight] proxy in
-            guard let pinTop else { return 0 }
-            return Self.pinnedOffset(cardFrame: proxy.frame(in: .scrollView(axis: .vertical)), headerHeight: headerHeight, pinTop: pinTop)
-        } action: { headerOffset = $0 }
-    }
-
-    /// While pinned, the header has the card's top corners and the gap above it is filled with
-    /// the screen's background, so it looks like the top of a card with the rest scrolling under.
-    private var pinnableHeader: some View {
-        let isPinned = headerOffset > 0
-        let radius = PanelMetrics.cornerRadius
-        return PanelHeader(title: title, subtitle: subtitle, accessory: accessory, favourite: favourite, icon: icon)
-            .clipShape(UnevenRoundedRectangle(topLeadingRadius: isPinned ? radius : 0, topTrailingRadius: isPinned ? radius : 0, style: .continuous))
-            .background(alignment: .top) {
-                if isPinned {
-                    Color.appBackground
-                        .frame(height: PanelMetrics.pinnedHeaderGap + radius)
-                        .offset(y: -PanelMetrics.pinnedHeaderGap)
+        if pins {
+            Section {
+                PanelCardPiece(edge: footer == nil ? .bottom : nil) {
+                    content
+                }
+            } header: {
+                PanelCardPiece(edge: .top) { header }
+                    // The gap above the card, kept when the header pins so it doesn't touch the
+                    // top of the scroll view.
+                    .padding(.top, PanelMetrics.cardSpacing)
+                    .pinnedBackground(edge: .top, isPinned: $isHeaderPinned)
+            } footer: {
+                if let footer {
+                    PanelCardPiece(edge: .bottom) { footer }
+                        .pinnedBackground(edge: .bottom, isPinned: $isFooterPinned)
                 }
             }
-            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { headerHeight = $0 }
-            .offset(y: headerOffset)
-            .zIndex(1)
+        } else {
+            VStack(spacing: 0) {
+                header
+                content
+                footer
+            }
+            .frame(maxWidth: .infinity)
+            .background(Color.appCard)
+            .clipShape(RoundedRectangle(cornerRadius: PanelMetrics.cornerRadius, style: .continuous))
+        }
     }
 
-    /// Keeps the header at `pinTop` while the card scrolls under it, like a list's section
-    /// header, until the card's bottom pushes it back up.
-    static func pinnedOffset(cardFrame: CGRect, headerHeight: CGFloat, pinTop: CGFloat) -> CGFloat {
-        min(max(pinTop - cardFrame.minY, 0), max(cardFrame.height - headerHeight, 0))
+    private var header: PanelHeader {
+        PanelHeader(title: title, subtitle: subtitle, accessory: accessory, favourite: favourite, icon: icon)
+    }
+}
+
+extension PanelCard where Footer == Never {
+    init(title: String, subtitle: String? = nil, accessory: PanelHeader.Accessory? = nil,
+         favourite: PanelHeader.Favourite? = nil, icon: String = "bus.fill", @ViewBuilder content: () -> Content) {
+        self.init(title: title, subtitle: subtitle, accessory: accessory, favourite: favourite, icon: icon, footer: nil, content: content)
+    }
+}
+
+/// A slice of a card in a `PanelCardStack`: the card's background and shadow, with the card's
+/// rounded corners on `edge` (if any). The shadow is cut off where the slice meets the next
+/// one, so the slices look like one card.
+private struct PanelCardPiece<Content: View>: View {
+    let edge: VerticalEdge?
+    @ViewBuilder let content: Content
+
+    var body: some View {
+        let radius = PanelMetrics.cornerRadius
+        let shape = UnevenRoundedRectangle(
+            topLeadingRadius: edge == .top ? radius : 0,
+            bottomLeadingRadius: edge == .bottom ? radius : 0,
+            bottomTrailingRadius: edge == .bottom ? radius : 0,
+            topTrailingRadius: edge == .top ? radius : 0,
+            style: .continuous
+        )
+        let shadowRoom = PanelMetrics.shadowRadius * 3
+        content
+            .frame(maxWidth: .infinity)
+            .background(Color.appCard)
+            .clipShape(shape)
+            .background {
+                shape
+                    .fill(Color.appCard)
+                    .shadow(color: PanelMetrics.shadowColor, radius: PanelMetrics.shadowRadius, y: PanelMetrics.shadowOffset)
+                    .mask {
+                        Rectangle()
+                            .padding(.horizontal, -shadowRoom)
+                            .padding(.top, edge == .top ? -shadowRoom : 0)
+                            .padding(.bottom, edge == .bottom ? -shadowRoom : 0)
+                    }
+            }
+    }
+}
+
+private extension View {
+    /// While this header (`.top`) or footer (`.bottom`) is pinned, the screen's background behind
+    /// it, so the card scrolling under it is hidden around its rounded corners, beside it (with
+    /// its shadow) and, for a footer, below it. Not drawn otherwise, so it doesn't cover the
+    /// shadow of the card before.
+    func pinnedBackground(edge: VerticalEdge, isPinned: Binding<Bool>) -> some View {
+        let room = PanelMetrics.shadowRadius * 3
+        return background {
+            if isPinned.wrappedValue {
+                Color.appBackground
+                    .padding(.horizontal, -room)
+                    .padding(.bottom, edge == .bottom ? -PanelMetrics.pinnedFooterCover : 0)
+            }
+        }
+        .onGeometryChange(for: Bool.self) { proxy in
+            // The scroll view's visible area, in this view's coordinates.
+            guard let visible = proxy.bounds(of: .scrollView(axis: .vertical)) else { return false }
+            let tolerance = 0.5
+            return switch edge {
+            case .top: visible.minY >= -tolerance
+            case .bottom: visible.maxY <= proxy.size.height + tolerance
+            }
+        } action: { isPinned.wrappedValue = $0 }
+    }
+}
+
+/// A scroll view's column of `PanelCard`s, whose headers and footers pin like a list's section
+/// headers and footers. Each card brings its own `PanelMetrics.cardSpacing` above it.
+struct PanelCardStack<Content: View>: View {
+    @ViewBuilder let content: Content
+
+    var body: some View {
+        LazyVStack(spacing: 0, pinnedViews: [.sectionHeaders, .sectionFooters]) {
+            content
+        }
+        .environment(\.panelCardPins, true)
     }
 }
 
 extension EnvironmentValues {
-    /// Where the header of a `PanelCard` pins, in the coordinates of the scroll view around it;
-    /// `nil` when headers don't pin.
-    @Entry var panelHeaderPinTop: CGFloat?
-}
-
-extension View {
-    /// Pins the green header of each `PanelCard` in this scroll view near the top of the visible
-    /// area (below any bar, after `PanelMetrics.pinnedHeaderGap`) while the rest of its card
-    /// scrolls under it. Cards need at least that gap above them in the scroll view.
-    func stickyPanelHeaders() -> some View {
-        // The scroll view's coordinate space starts below its bars, so the gap is all it needs.
-        environment(\.panelHeaderPinTop, PanelMetrics.pinnedHeaderGap)
-    }
+    /// Whether `PanelCard`s are sections of a `PanelCardStack`.
+    @Entry var panelCardPins = false
 }
 
 enum PanelMetrics {
     static let cornerRadius: CGFloat = 24
     static let horizontalPadding: CGFloat = 16
-    /// The space above a pinned header (see `stickyPanelHeaders()`), as between cards.
-    static let pinnedHeaderGap: CGFloat = 16
+    /// The space above each card in a `PanelCardStack`, kept above a pinned header.
+    static let cardSpacing: CGFloat = 16
+    static let shadowColor = Color.black.opacity(0.12)
+    static let shadowRadius: CGFloat = 10
+    static let shadowOffset: CGFloat = 3
+    /// How far below a pinned footer the background reaches, over the bottom bars.
+    static let pinnedFooterCover: CGFloat = 200
     static let footerBackground = Color.cardFooter
 }
 

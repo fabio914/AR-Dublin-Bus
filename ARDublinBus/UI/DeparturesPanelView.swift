@@ -11,13 +11,18 @@ struct DeparturesPanelView: View {
     /// A star in the header for starring the stop (in-app boards only).
     var favourite: PanelHeader.Favourite?
 
+    /// The AR panel's width. In the app, the board is as wide as the other cards.
     static let width: CGFloat = 360
 
     var body: some View {
-        PanelCard(title: Self.title(for: content), subtitle: Self.stopName(for: content), favourite: favourite) {
-            DeparturesPanelBody(content: content, now: now, maximumRows: maximumRows, linksToTrips: linksToTrips)
+        PanelCard(title: Self.title(for: content), subtitle: Self.stopName(for: content), favourite: favourite, footer: footer) {
+            DeparturesPanelBody(content: content, now: now, maximumRows: maximumRows, linksToTrips: linksToTrips, showsFooter: false)
         }
-        .frame(width: Self.width)
+    }
+
+    private var footer: PanelFooter<RealtimeStatusLabel>? {
+        guard case .board(let board) = content else { return nil }
+        return PanelFooter { RealtimeStatusLabel(issue: board.realtimeIssue, updatedAt: board.updatedAt) }
     }
 
     static func title(for content: PanelContent) -> String {
@@ -42,6 +47,8 @@ struct DeparturesPanelBody: View {
     let now: Date
     var maximumRows = 6
     var linksToTrips = false
+    /// The live/timetable strip under a board; off when the card shows it as its footer.
+    var showsFooter = true
 
     var body: some View {
         switch content {
@@ -76,7 +83,9 @@ struct DeparturesPanelBody: View {
                     }
                 }
             }
-            PanelFooter { RealtimeStatusLabel(issue: board.realtimeIssue, updatedAt: board.updatedAt) }
+            if showsFooter {
+                PanelFooter { RealtimeStatusLabel(issue: board.realtimeIssue, updatedAt: board.updatedAt) }
+            }
         }
     }
 }

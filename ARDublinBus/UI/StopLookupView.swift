@@ -61,7 +61,6 @@ struct StopLookupView: View {
                 .padding()
             }
             .scrollDismissesKeyboard(.interactively)
-            .stickyPanelHeaders()
             .background(Color.appBackground)
             .navigationTitle("Search")
             .navigationBarTitleDisplayMode(.inline)
@@ -139,7 +138,7 @@ private struct FavouriteStopsSection: View {
     private var favourites: [FavouriteStop] { model.favourites.stops }
 
     var body: some View {
-        VStack(spacing: 16) {
+        VStack(spacing: 0) {
             if favourites.isEmpty {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Type a stop number, like 271, or part of a stop's name, like O'Connell.")
@@ -149,34 +148,38 @@ private struct FavouriteStopsSection: View {
                 .foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity, alignment: .leading)
             } else {
-                HStack(spacing: 6) {
-                    Label("Favourites", systemImage: "star.fill")
-                        .font(.headline)
-                    Spacer(minLength: 0)
-                }
-                if let loadError {
-                    Label(loadError, systemImage: "exclamationmark.triangle")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                } else if let updatedAt {
+                VStack(spacing: 16) {
                     HStack(spacing: 6) {
-                        RealtimeStatusLabel(issue: boards.values.first?.realtimeIssue, updatedAt: updatedAt)
+                        Label("Favourites", systemImage: "star.fill")
+                            .font(.headline)
                         Spacer(minLength: 0)
                     }
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
+                    if let loadError {
+                        Label(loadError, systemImage: "exclamationmark.triangle")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    } else if let updatedAt {
+                        HStack(spacing: 6) {
+                            RealtimeStatusLabel(issue: boards.values.first?.realtimeIssue, updatedAt: updatedAt)
+                            Spacer(minLength: 0)
+                        }
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                    }
                 }
-                ForEach(favourites) { favourite in
-                    let board = boards[favourite.code]
-                    StopSummaryCard(
-                        code: favourite.code,
-                        name: board?.stopName ?? favourite.name,
-                        board: board,
-                        unavailable: isKnown(favourite.code) ? nil : "This stop isn't in the current timetable.",
-                        destination: favourite
-                    )
-                    .transition(.opacity.combined(with: .scale(scale: 0.95)))
+                // Each card brings the space above it.
+                PanelCardStack {
+                    ForEach(favourites) { favourite in
+                        let board = boards[favourite.code]
+                        StopSummaryCard(
+                            code: favourite.code,
+                            name: board?.stopName ?? favourite.name,
+                            board: board,
+                            unavailable: isKnown(favourite.code) ? nil : "This stop isn't in the current timetable.",
+                            destination: favourite
+                        )
+                    }
                 }
             }
         }

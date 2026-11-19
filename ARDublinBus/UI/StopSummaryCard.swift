@@ -20,7 +20,8 @@ struct StopSummaryCard<Destination: Hashable>: View {
             title: name.isEmpty ? "Stop \(code)" : name,
             subtitle: name.isEmpty ? nil : "Stop \(code)",
             accessory: accessory,
-            favourite: favourite
+            favourite: favourite,
+            footer: allDepartures
         ) {
             if let unavailable {
                 PanelMessage(icon: "exclamationmark.triangle.fill", title: "No departures", detail: unavailable)
@@ -45,23 +46,25 @@ struct StopSummaryCard<Destination: Hashable>: View {
                 ProgressView()
                     .padding(.vertical, 24)
             }
-
-            NavigationLink(value: destination) {
-                HStack {
-                    Text("All departures")
-                    Spacer()
-                    Image(systemName: "chevron.right")
-                }
-                .font(.system(size: 15, weight: .semibold))
-                .foregroundStyle(Color.appTint)
-                .padding(.horizontal, PanelMetrics.horizontalPadding)
-                .padding(.vertical, 12)
-                .background(PanelMetrics.footerBackground)
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
         }
-        .shadow(color: .black.opacity(0.12), radius: 10, y: 3)
+    }
+
+    /// The card's footer: a link to the stop's full board.
+    private var allDepartures: some View {
+        NavigationLink(value: destination) {
+            HStack {
+                Text("All departures")
+                Spacer()
+                Image(systemName: "chevron.right")
+            }
+            .font(.system(size: 15, weight: .semibold))
+            .foregroundStyle(Color.appTint)
+            .padding(.horizontal, PanelMetrics.horizontalPadding)
+            .padding(.vertical, 12)
+            .background(PanelMetrics.footerBackground)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 
     private var favourite: PanelHeader.Favourite {

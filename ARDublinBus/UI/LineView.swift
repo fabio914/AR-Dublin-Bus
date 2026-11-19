@@ -99,16 +99,18 @@ struct LineView: View {
 
             ScrollViewReader { proxy in
                 ScrollView {
-                    switch section {
-                    case .timetable:
-                        LineTimetableCard(details: details, direction: direction)
-                            .padding(16)
-                    case .stops:
-                        LineStopsCard(route: details.route, direction: direction)
-                            .padding(16)
+                    TimelineView(.periodic(from: .now, by: 30)) { context in
+                        PanelCardStack {
+                            switch section {
+                            case .timetable:
+                                LineTimetableCard(details: details, direction: direction, now: context.date)
+                            case .stops:
+                                LineStopsCard(route: details.route, direction: direction)
+                            }
+                        }
+                        .padding([.horizontal, .bottom], 16)
                     }
                 }
-                .stickyPanelHeaders()
                 .onAppear { scrollToStop(proxy, direction: direction) }
                 .onChange(of: section) { scrollToStop(proxy, direction: direction) }
                 .onChange(of: direction.id) { scrollToStop(proxy, direction: direction) }
@@ -151,7 +153,7 @@ private struct LineStopsCard: View {
     let direction: LineDirection
 
     var body: some View {
-        PanelCard(title: "To \(direction.headsign)", subtitle: subtitle, icon: "point.topleft.down.to.point.bottomright.curvepath.fill") {
+        PanelCard(title: "To \(direction.headsign)", subtitle: subtitle, icon: "point.topleft.down.to.point.bottomright.curvepath.fill", footer: footer) {
             VStack(spacing: 0) {
                 ForEach(Array(direction.stops.enumerated()), id: \.element.id) { index, stop in
                     LineStopRow(
@@ -164,12 +166,14 @@ private struct LineStopsCard: View {
                 }
             }
             .padding(.vertical, 6)
-            PanelFooter {
-                Image(systemName: "clock")
-                Text("Typical journey times from your stop")
-            }
         }
-        .shadow(color: .black.opacity(0.12), radius: 10, y: 3)
+    }
+
+    private var footer: PanelFooter<TupleView<(Image, Text)>> {
+        PanelFooter {
+            Image(systemName: "clock")
+            Text("Typical journey times from your stop")
+        }
     }
 
     private var subtitle: String {
@@ -231,38 +235,39 @@ private struct LineStopRow: View {
 private struct LineTimetableCard: View {
     let details: LineDetails
     let direction: LineDirection
+    let now: Date
     @State private var dayOffset = 0
 
     static let days = 7
 
     var body: some View {
-        TimelineView(.periodic(from: .now, by: 30)) { context in
-            let today = GTFSDate(date: context.date)
-            let date = today.adding(days: dayOffset)
-            let departures = direction.timetable(on: date, services: details.services)
-            let next = dayOffset == 0 ? departures.first { $0.time >= context.date } : nil
+        let today = GTFSDate(date: now)
+        let date = today.adding(days: dayOffset)
+        let departures = direction.timetable(on: date, services: details.services)
+        let next = dayOffset == 0 ? departures.first { $0.time >= now } : nil
 
-            PanelCard(title: "Timetable", subtitle: "From stop \(details.stop.code) · \(dayName(date, today: today))", icon: "calendar") {
-                dayPicker(today: today)
-                    .padding(.vertical, 10)
-                PanelSeparator()
-                if departures.isEmpty {
-                    PanelMessage(icon: "moon.zzz.fill", title: "No buses to \(direction.headsign) on this day")
-                } else {
-                    VStack(spacing: 0) {
-                        ForEach(Array(hours(departures).enumerated()), id: \.offset) { index, hour in
-                            if index > 0 { PanelSeparator() }
-                            HourRow(hour: hour.hour, departures: hour.departures, now: dayOffset == 0 ? context.date : nil, next: next)
-                        }
+        PanelCard(title: "Timetable", subtitle: "From stop \(details.stop.code) · \(dayName(date, today: today))", icon: "calendar", footer: footer) {
+            dayPicker(today: today)
+                .padding(.vertical, 10)
+            PanelSeparator()
+            if departures.isEmpty {
+                PanelMessage(icon: "moon.zzz.fill", title: "No buses to \(direction.headsign) on this day")
+            } else {
+                VStack(spacing: 0) {
+                    ForEach(Array(hours(departures).enumerated()), id: \.offset) { index, hour in
+                        if index > 0 { PanelSeparator() }
+                        HourRow(hour: hour.hour, departures: hour.departures, now: dayOffset == 0 ? now : nil, next: next)
                     }
-                    .padding(.vertical, 4)
                 }
-                PanelFooter {
-                    Image(systemName: "hand.tap")
-                    Text("Tap a time to follow that bus")
-                }
+                .padding(.vertical, 4)
             }
-            .shadow(color: .black.opacity(0.12), radius: 10, y: 3)
+        }
+    }
+
+    private var footer: PanelFooter<TupleView<(Image, Text)>> {
+        PanelFooter {
+            Image(systemName: "hand.tap")
+            Text("Tap a time to follow that bus")
         }
     }
 

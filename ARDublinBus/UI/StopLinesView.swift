@@ -111,7 +111,7 @@ struct StopLinesCard: View {
     static let mapHeight: CGFloat = 240
 
     var body: some View {
-        PanelCard(title: "Lines", subtitle: subtitle, icon: "point.topleft.down.to.point.bottomright.curvepath.fill") {
+        PanelCard(title: "Lines", subtitle: subtitle, icon: "point.topleft.down.to.point.bottomright.curvepath.fill", footer: footer) {
             if let overview {
                 let colours = LineColour.colours(for: overview.lines)
                 if overview.lines.isEmpty {
@@ -120,10 +120,6 @@ struct StopLinesCard: View {
                     StopLinesMap(overview: overview, colours: colours)
                         .frame(height: Self.mapHeight)
                     lineRows(overview.lines, colours: colours, stopCode: overview.stop.code)
-                    PanelFooter {
-                        Image(systemName: "hand.tap")
-                        Text("Tap a line for its stops and timetable")
-                    }
                 }
             } else if let error {
                 PanelMessage(icon: "exclamationmark.triangle.fill", title: "Couldn't load the lines", detail: error)
@@ -133,7 +129,14 @@ struct StopLinesCard: View {
                     .frame(maxWidth: .infinity)
             }
         }
-        .shadow(color: .black.opacity(0.12), radius: 10, y: 3)
+    }
+
+    private var footer: PanelFooter<TupleView<(Image, Text)>>? {
+        guard let overview, !overview.lines.isEmpty else { return nil }
+        return PanelFooter {
+            Image(systemName: "hand.tap")
+            Text("Tap a line for its stops and timetable")
+        }
     }
 
     private var subtitle: String? {

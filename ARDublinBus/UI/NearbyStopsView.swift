@@ -159,22 +159,21 @@ struct NearbyStopsView: View {
 
     private func list(_ model: NearbyStopsModel) -> some View {
         ScrollView {
-            VStack(spacing: 16) {
-                Picker("Show", selection: $mode) {
-                    ForEach(Mode.allCases, id: \.self) { Text($0.rawValue) }
-                }
-                .pickerStyle(.segmented)
+            VStack(spacing: 0) {
+                VStack(spacing: 16) {
+                    Picker("Show", selection: $mode) {
+                        ForEach(Mode.allCases, id: \.self) { Text($0.rawValue) }
+                    }
+                    .pickerStyle(.segmented)
 
-                if let nearest = model.stops.first, nearest.stop.distance > DepartureService.nearbyRadius {
-                    Label("No stops within walking distance. These are the closest.", systemImage: "figure.walk")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }
+                    if let nearest = model.stops.first, nearest.stop.distance > DepartureService.nearbyRadius {
+                        Label("No stops within walking distance. These are the closest.", systemImage: "figure.walk")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
 
-                switch mode {
-                case .stops:
-                    if let updatedAt = model.updatedAt {
+                    if mode == .stops, let updatedAt = model.updatedAt {
                         HStack(spacing: 6) {
                             RealtimeStatusLabel(issue: model.realtimeIssue, updatedAt: updatedAt)
                             Spacer(minLength: 0)
@@ -182,23 +181,28 @@ struct NearbyStopsView: View {
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                     }
-                    ForEach(model.stops) { entry in
-                        StopSummaryCard(
-                            code: entry.stop.stop.code,
-                            name: entry.stop.stop.name,
-                            accessory: .init(systemImage: "figure.walk", text: DistanceText.walking(entry.stop.distance)),
-                            board: entry.board,
-                            destination: entry.stop
-                        )
+                }
+
+                PanelCardStack {
+                    switch mode {
+                    case .stops:
+                        ForEach(model.stops) { entry in
+                            StopSummaryCard(
+                                code: entry.stop.stop.code,
+                                name: entry.stop.stop.name,
+                                accessory: .init(systemImage: "figure.walk", text: DistanceText.walking(entry.stop.distance)),
+                                board: entry.board,
+                                destination: entry.stop
+                            )
+                        }
+                    case .departures:
+                        NearbyDeparturesCard(model: model)
                     }
-                case .departures:
-                    NearbyDeparturesCard(model: model)
                 }
             }
             .padding(.horizontal, 16)
             .padding(.bottom, 24)
         }
-        .stickyPanelHeaders()
         .background(Color.appBackground)
         .refreshable { runID = UUID() }
     }
@@ -209,7 +213,7 @@ private struct NearbyDeparturesCard: View {
     let model: NearbyStopsModel
 
     var body: some View {
-        PanelCard(title: "Next buses", subtitle: "From \(model.stops.count) stops near you", icon: "location.fill") {
+        PanelCard(title: "Next buses", subtitle: "From \(model.stops.count) stops near you", icon: "location.fill", footer: footer) {
             if model.departures.isEmpty {
                 if model.phase == .loaded {
                     PanelMessage(icon: "moon.zzz.fill", title: "No buses in the next 90 minutes")
@@ -236,10 +240,12 @@ private struct NearbyDeparturesCard: View {
                 }
                 .buttonStyle(.plain)
             }
-            if let updatedAt = model.updatedAt {
-                PanelFooter { RealtimeStatusLabel(issue: model.realtimeIssue, updatedAt: updatedAt) }
-            }
         }
-        .shadow(color: .black.opacity(0.12), radius: 10, y: 3)
+    }
+
+    private var footer: PanelFooter<RealtimeStatusLabel>? {
+        model.updatedAt.map { updatedAt in
+            PanelFooter { RealtimeStatusLabel(issue: model.realtimeIssue, updatedAt: updatedAt) }
+        }
     }
 }
