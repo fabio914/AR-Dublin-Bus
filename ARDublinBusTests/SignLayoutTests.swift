@@ -1,6 +1,7 @@
 import CoreGraphics
 import simd
 import Testing
+import UIKit
 @testable import ARDublinBus
 
 struct SignLayoutTests {
@@ -80,30 +81,61 @@ struct SignLayoutTests {
         #expect(abs(bigger.z - (signBottom * 1.1 + 0.2 + 0.35)) < 0.0001)
     }
 
-    /// A round sign's number line, seen head-on from 3 m: its origin is the disc's centre, above
-    /// the number, and the card hangs below the disc.
+    /// A round sign's number line, seen head-on from 3 m: its origin, the centre of its reference
+    /// image, is above the number, and the card hangs below the disc.
     @Test(arguments: [SignKind.greenDisc, .yellowDisc])
     func placesARoundSignFromItsNumber(kind: SignKind) throws {
-        let metrics = SignLayout.metrics(for: kind)
+        let geometry = SignLayout.geometry(of: kind)
         let label = StopLabel(number: "2383", text: "2383", quad: Self.box(
             center: CGPoint(x: 960, y: 720),
-            width: CGFloat(1280 * metrics.characterWidth * 4 / 3),
-            height: CGFloat(1280 * metrics.height / 3)
+            width: CGFloat(1280 * geometry.labelCharacterWidth * 4 / 3),
+            height: CGFloat(1280 * geometry.labelHeight / 3)
         ), kind: kind)
         let transform = try #require(SignLayout.signTransform(label: label, cameraTransform: matrix_identity_float4x4,
                                                                intrinsics: intrinsics))
         let position = transform.columns.3
         #expect(abs(position.z + 3) < 0.01)
-        #expect(abs(position.y - metrics.labelBelowOrigin) < 0.001)
-        #expect(metrics.labelBelowOrigin > 0.1 && metrics.labelBelowOrigin < SignLayout.discDiameter / 2)
+        #expect(abs(position.y - geometry.labelBelowOrigin) < 0.001)
 
-        // ARKit's estimate of a flag's size doesn't apply to a round sign.
-        let center = SignLayout.cardCenter(kind: kind, referenceSize: SignLayout.referenceSize * 1.1, cardHeight: 0.7)
-        #expect(abs(center.z - (SignLayout.discDiameter / 2 + 0.2 + 0.35)) < 0.0001)
+        // Everything fits on the disc: the image's centre is above the disc's, the number below it.
+        let d = SignLayout.discDiameter
+        let originAboveCentre = geometry.bottomBelowOrigin - d / 2
+        #expect(originAboveCentre > 0 && originAboveCentre + geometry.referenceSize.y / 2 < d / 2)
+        #expect(geometry.labelBelowOrigin > originAboveCentre && geometry.labelBelowOrigin < geometry.bottomBelowOrigin)
+
+        // As printed, the card hangs 20 cm below the disc's bottom edge.
+        let center = SignLayout.cardCenter(kind: kind, referenceSize: geometry.referenceSize, cardHeight: 0.7)
+        #expect(abs(center.z - (geometry.bottomBelowOrigin + 0.2 + 0.35)) < 0.0001)
+        // ARKit judging the image 10% bigger scales the sign, not the gap.
+        let bigger = SignLayout.cardCenter(kind: kind, referenceSize: geometry.referenceSize * 1.1, cardHeight: 0.7)
+        #expect(abs(bigger.z - (geometry.bottomBelowOrigin * 1.1 + 0.2 + 0.35)) < 0.0001)
     }
 
     @Test func referenceImageMatchesThePanelWidth() {
         #expect(SignLayout.referenceSize.x == SignLayout.panelWidth)
-        #expect(BusStopSign.physicalWidth == CGFloat(SignLayout.panelWidth))
+        #expect(SignLayout.geometry(of: .flag).referenceSize == SignLayout.referenceSize)
+    }
+
+    /// ARKit takes each image's height from its width and aspect ratio: the layout must agree.
+    @Test(arguments: [(BusStopSign.flagImageName, SignKind.flag), (BusStopSign.dublinBusImageName, .yellowDisc)])
+    func referenceImagesMatchTheirLayout(name: String, kind: SignKind) throws {
+        let image = try #require(UIImage(named: name)?.cgImage)
+        let size = SignLayout.geometry(of: kind).referenceSize
+        #expect(abs(size.y / size.x - Float(image.height) / Float(image.width)) < 0.001)
+        #expect(BusStopSign.kind(ofReferenceImage: name) == kind)
+        // The green sign's pictogram is the flag's image: same shape, smaller.
+        if kind == .flag {
+            let green = SignLayout.geometry(of: .greenDisc).referenceSize
+            #expect(abs(green.y / green.x - size.y / size.x) < 0.002)
+        }
+    }
+
+    /// Both images are offered to ARKit, at their printed widths.
+    @Test func makesAReferenceImagePerSign() {
+        let images = BusStopSign.makeReferenceImages()
+        let widths = Dictionary(uniqueKeysWithValues: images.map { ($0.name ?? "", Float($0.physicalSize.width)) })
+        #expect(widths.count == 2)
+        #expect(abs((widths[BusStopSign.flagImageName] ?? 0) - SignLayout.panelWidth) < 0.0001)
+        #expect(abs((widths[BusStopSign.dublinBusImageName] ?? 0) - SignLayout.geometry(of: .yellowDisc).referenceSize.x) < 0.0001)
     }
 }
