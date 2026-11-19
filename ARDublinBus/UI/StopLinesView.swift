@@ -49,7 +49,7 @@ struct LineColour {
     }
 }
 
-/// Where every line goes from the stop, each in its own colour.
+/// Where every line goes from the stop, each in its own colour, as a still overview.
 struct StopLinesMap: View {
     let overview: StopLines
     let colours: [String: LineColour]
@@ -81,10 +81,8 @@ struct StopLinesMap: View {
             UserAnnotation()
         }
         .mapStyle(.standard(pointsOfInterest: .excludingAll))
-        .mapControls {
-            MapUserLocationButton()
-            MapCompass()
-        }
+        // A fixed overview: it doesn't pan or zoom, so the card scrolls when dragged over it.
+        .allowsHitTesting(false)
     }
 
     /// Every path of `lines` and the stop, with some padding.

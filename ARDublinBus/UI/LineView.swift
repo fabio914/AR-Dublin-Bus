@@ -95,19 +95,20 @@ struct LineView: View {
                 .pickerStyle(.segmented)
             }
             .padding(.horizontal, 16)
-            .padding(.vertical, 10)
+            .padding(.top, 10)
 
             ScrollViewReader { proxy in
                 ScrollView {
                     switch section {
                     case .timetable:
                         LineTimetableCard(details: details, direction: direction)
-                            .padding([.horizontal, .bottom], 16)
+                            .padding(16)
                     case .stops:
                         LineStopsCard(route: details.route, direction: direction)
-                            .padding([.horizontal, .bottom], 16)
+                            .padding(16)
                     }
                 }
+                .stickyPanelHeaders()
                 .onAppear { scrollToStop(proxy, direction: direction) }
                 .onChange(of: section) { scrollToStop(proxy, direction: direction) }
                 .onChange(of: direction.id) { scrollToStop(proxy, direction: direction) }

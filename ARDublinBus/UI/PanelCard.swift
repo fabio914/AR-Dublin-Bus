@@ -11,20 +11,73 @@ struct PanelCard<Content: View>: View {
     var icon = "bus.fill"
     @ViewBuilder let content: Content
 
+    /// Where the header pins inside a scroll view using `stickyPanelHeaders()`; `nil` elsewhere.
+    @Environment(\.panelHeaderPinTop) private var pinTop
+    @State private var headerHeight: CGFloat = 0
+    /// How far the header has slid down the card to stay pinned.
+    @State private var headerOffset: CGFloat = 0
+
     var body: some View {
         VStack(spacing: 0) {
-            PanelHeader(title: title, subtitle: subtitle, accessory: accessory, favourite: favourite, icon: icon)
+            pinnableHeader
             content
         }
         .frame(maxWidth: .infinity)
         .background(Color.appCard)
         .clipShape(RoundedRectangle(cornerRadius: PanelMetrics.cornerRadius, style: .continuous))
+        .onGeometryChange(for: CGFloat.self) { [pinTop, headerHeight] proxy in
+            guard let pinTop else { return 0 }
+            return Self.pinnedOffset(cardFrame: proxy.frame(in: .scrollView(axis: .vertical)), headerHeight: headerHeight, pinTop: pinTop)
+        } action: { headerOffset = $0 }
+    }
+
+    /// While pinned, the header has the card's top corners and the gap above it is filled with
+    /// the screen's background, so it looks like the top of a card with the rest scrolling under.
+    private var pinnableHeader: some View {
+        let isPinned = headerOffset > 0
+        let radius = PanelMetrics.cornerRadius
+        return PanelHeader(title: title, subtitle: subtitle, accessory: accessory, favourite: favourite, icon: icon)
+            .clipShape(UnevenRoundedRectangle(topLeadingRadius: isPinned ? radius : 0, topTrailingRadius: isPinned ? radius : 0, style: .continuous))
+            .background(alignment: .top) {
+                if isPinned {
+                    Color.appBackground
+                        .frame(height: PanelMetrics.pinnedHeaderGap + radius)
+                        .offset(y: -PanelMetrics.pinnedHeaderGap)
+                }
+            }
+            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { headerHeight = $0 }
+            .offset(y: headerOffset)
+            .zIndex(1)
+    }
+
+    /// Keeps the header at `pinTop` while the card scrolls under it, like a list's section
+    /// header, until the card's bottom pushes it back up.
+    static func pinnedOffset(cardFrame: CGRect, headerHeight: CGFloat, pinTop: CGFloat) -> CGFloat {
+        min(max(pinTop - cardFrame.minY, 0), max(cardFrame.height - headerHeight, 0))
+    }
+}
+
+extension EnvironmentValues {
+    /// Where the header of a `PanelCard` pins, in the coordinates of the scroll view around it;
+    /// `nil` when headers don't pin.
+    @Entry var panelHeaderPinTop: CGFloat?
+}
+
+extension View {
+    /// Pins the green header of each `PanelCard` in this scroll view near the top of the visible
+    /// area (below any bar, after `PanelMetrics.pinnedHeaderGap`) while the rest of its card
+    /// scrolls under it. Cards need at least that gap above them in the scroll view.
+    func stickyPanelHeaders() -> some View {
+        // The scroll view's coordinate space starts below its bars, so the gap is all it needs.
+        environment(\.panelHeaderPinTop, PanelMetrics.pinnedHeaderGap)
     }
 }
 
 enum PanelMetrics {
     static let cornerRadius: CGFloat = 24
     static let horizontalPadding: CGFloat = 16
+    /// The space above a pinned header (see `stickyPanelHeaders()`), as between cards.
+    static let pinnedHeaderGap: CGFloat = 16
     static let footerBackground = Color.cardFooter
 }
 

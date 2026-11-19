@@ -92,6 +92,7 @@ struct StopBoardScreen: View {
             StopDetailsView(stopCode: stopCode)
                 .padding()
         }
+        .stickyPanelHeaders()
         .background(Color.appBackground)
         .navigationTitle("Stop \(stopCode)")
         .navigationBarTitleDisplayMode(.inline)
@@ -110,6 +111,7 @@ struct StopBoardSheet: View {
                 StopDetailsView(stopCode: stop.code)
                     .padding()
             }
+            .stickyPanelHeaders()
             .background(Color.appBackground)
             .navigationTitle(stop.name)
             .navigationBarTitleDisplayMode(.inline)

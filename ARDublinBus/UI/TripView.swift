@@ -105,6 +105,7 @@ private struct TripStopsList: View {
                 .shadow(color: .black.opacity(0.12), radius: 10, y: 3)
                 .padding(16)
             }
+            .stickyPanelHeaders()
             .onAppear {
                 if let origin = journey.origin {
                     proxy.scrollTo(origin.id, anchor: .center)
