@@ -61,24 +61,24 @@ struct SignLayoutTests {
 
     /// The departures panel lies flat on the sign: facing out of it, its top up the sign.
     @MainActor @Test func panelLiesOnTheSign() {
-        let rotation = DeparturesPanelEntity.onSign
+        let rotation = StopCardEntity.onSign
         #expect(simd_distance(rotation.act(SIMD3(0, 0, 1)), SIMD3(0, 1, 0)) < 0.0001)  // front → out of the sign
         #expect(simd_distance(rotation.act(SIMD3(0, 1, 0)), SIMD3(0, 0, -1)) < 0.0001) // top → up the sign
         #expect(simd_distance(rotation.act(SIMD3(1, 0, 0)), SIMD3(1, 0, 0)) < 0.0001)  // right stays right
     }
 
     @Test func cardHangsBelowTheSign() {
-        let center = SignLayout.cardCenter(kind: .flag, referenceSize: SignLayout.referenceSize, cardHeight: 0.7)
+        let top = SignLayout.cardTop(kind: .flag, referenceSize: SignLayout.referenceSize)
         // The flag's bottom edge is 0.9 - 0.034 m below the green panel's top; the anchor is the
         // reference image's centre, half its height below that top.
         let signBottom: Float = 0.9 - 0.034 - SignLayout.referenceSize.y / 2
-        #expect(abs(center.x) < 0.0001)
-        #expect(abs(center.y - 0.1) < 0.0001)                       // 10 cm in front
-        #expect(abs(center.z - (signBottom + 0.2 + 0.35)) < 0.0001) // top edge 20 cm below the sign
+        #expect(abs(top.x) < 0.0001)
+        #expect(abs(top.y - 0.1) < 0.0001)                // 10 cm in front
+        #expect(abs(top.z - (signBottom + 0.2)) < 0.0001) // top edge 20 cm below the sign
 
         // A sign ARKit judges 10% bigger: the sign scales, the gaps don't.
-        let bigger = SignLayout.cardCenter(kind: .flag, referenceSize: SignLayout.referenceSize * 1.1, cardHeight: 0.7)
-        #expect(abs(bigger.z - (signBottom * 1.1 + 0.2 + 0.35)) < 0.0001)
+        let bigger = SignLayout.cardTop(kind: .flag, referenceSize: SignLayout.referenceSize * 1.1)
+        #expect(abs(bigger.z - (signBottom * 1.1 + 0.2)) < 0.0001)
     }
 
     /// A round sign's number line, seen head-on from 3 m: its origin, the centre of its reference
@@ -104,11 +104,11 @@ struct SignLayoutTests {
         #expect(geometry.labelBelowOrigin > originAboveCentre && geometry.labelBelowOrigin < geometry.bottomBelowOrigin)
 
         // As printed, the card hangs 20 cm below the disc's bottom edge.
-        let center = SignLayout.cardCenter(kind: kind, referenceSize: geometry.referenceSize, cardHeight: 0.7)
-        #expect(abs(center.z - (geometry.bottomBelowOrigin + 0.2 + 0.35)) < 0.0001)
+        let top = SignLayout.cardTop(kind: kind, referenceSize: geometry.referenceSize)
+        #expect(abs(top.z - (geometry.bottomBelowOrigin + 0.2)) < 0.0001)
         // ARKit judging the image 10% bigger scales the sign, not the gap.
-        let bigger = SignLayout.cardCenter(kind: kind, referenceSize: geometry.referenceSize * 1.1, cardHeight: 0.7)
-        #expect(abs(bigger.z - (geometry.bottomBelowOrigin * 1.1 + 0.2 + 0.35)) < 0.0001)
+        let bigger = SignLayout.cardTop(kind: kind, referenceSize: geometry.referenceSize * 1.1)
+        #expect(abs(bigger.z - (geometry.bottomBelowOrigin * 1.1 + 0.2)) < 0.0001)
     }
 
     @Test func referenceImageMatchesThePanelWidth() {

@@ -42,18 +42,32 @@ struct PanelRenderingTests {
         }
     }
 
-    /// The floating label over a nearby stop in AR.
-    @Test func rendersStopPin() throws {
-        let stop = ARStop(stop: GTFSStop(id: "x", code: "271", name: "O'Connell St Lwr", latitude: nil, longitude: nil),
-                          routes: ["1", "11", "11B", "44", "44D", "53", "122"])
-        let renderer = ImageRenderer(content: StopPinView(stop: stop, distance: 140))
-        renderer.scale = 3
-        renderer.isOpaque = false
-        let image = try #require(renderer.cgImage)
-        #expect(image.width > image.height)
-        if let directory = ProcessInfo.processInfo.environment["RENDER_DIR"] {
-            let data = try #require(UIImage(cgImage: image).pngData())
-            try data.write(to: URL(fileURLWithPath: directory).appendingPathComponent("stop-pin.png"))
+    /// The AR stop card's parts, each rendered as its own texture.
+    @Test func rendersStopCardParts() throws {
+        let now = Date.dublin(2026, 11, 16, 8, 0)
+        let timetable = try GTFSFixture().load()
+        let departures = DepartureCalculator().departures(
+            calls: try timetable.calls(atStopIDs: [GTFSFixture.stopID]), stopIDs: [GTFSFixture.stopID],
+            timetable: timetable, realtime: nil, now: now
+        )
+        let board = StopBoard(stopCode: "271", stopName: "O'Connell St Lwr", departures: departures,
+                              realtimeIssue: nil, realtimeTimestamp: now, generatedAt: now)
+        let parts: [(String, AnyView)] = [
+            ("card-header", AnyView(StopCardEntity.HeaderView(header: .init(title: "Stop 271", subtitle: "O'Connell St Lwr", distance: 140)))),
+            ("card-lines", AnyView(StopCardEntity.FoldedBodyView(folded: .init(routes: ["1", "11", "11B", "44", "44D", "53", "122", "C1", "C2"])))),
+            ("card-reading", AnyView(StopCardEntity.FoldedBodyView(folded: .init(message: "Reading the stop number…")))),
+            ("card-board", AnyView(StopCardEntity.BoardView(content: .board(board), now: now))),
+        ]
+        for (name, view) in parts {
+            let renderer = ImageRenderer(content: view.frame(width: DeparturesPanelView.width).environment(\.colorScheme, .light))
+            renderer.scale = 3
+            renderer.isOpaque = false
+            let image = try #require(renderer.cgImage)
+            #expect(image.width == Int(DeparturesPanelView.width * 3))
+            if let directory = ProcessInfo.processInfo.environment["RENDER_DIR"] {
+                let data = try #require(UIImage(cgImage: image).pngData())
+                try data.write(to: URL(fileURLWithPath: directory).appendingPathComponent("\(name).png"))
+            }
         }
     }
 

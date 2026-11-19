@@ -14,22 +14,13 @@ struct DeparturesPanelView: View {
     static let width: CGFloat = 360
 
     var body: some View {
-        PanelCard(title: stopTitle, subtitle: stopName, favourite: favourite) {
-            switch content {
-            case .reading(let hint):
-                PanelMessage(icon: "text.viewfinder", title: "Reading stop number…", detail: hint)
-            case .loading:
-                PanelMessage(icon: "clock.arrow.circlepath", title: "Loading departures…")
-            case .failure(_, let error):
-                PanelMessage(icon: "exclamationmark.triangle.fill", title: "Couldn't load departures", detail: error)
-            case .board(let board):
-                boardBody(board)
-            }
+        PanelCard(title: Self.title(for: content), subtitle: Self.stopName(for: content), favourite: favourite) {
+            DeparturesPanelBody(content: content, now: now, maximumRows: maximumRows, linksToTrips: linksToTrips)
         }
         .frame(width: Self.width)
     }
 
-    private var stopTitle: String {
+    static func title(for content: PanelContent) -> String {
         switch content {
         case .reading: "Bus stop"
         case .loading(let code): "Stop \(code)"
@@ -38,12 +29,32 @@ struct DeparturesPanelView: View {
         }
     }
 
-    private var stopName: String? {
+    static func stopName(for content: PanelContent) -> String? {
         if case .board(let board) = content, !board.stopName.isEmpty { return board.stopName }
         return nil
     }
+}
 
-    // MARK: Board
+/// Everything under the board's header: the departures, or a message. It has no background of
+/// its own (the card provides it), so the AR card can draw it as a separate layer.
+struct DeparturesPanelBody: View {
+    let content: PanelContent
+    let now: Date
+    var maximumRows = 6
+    var linksToTrips = false
+
+    var body: some View {
+        switch content {
+        case .reading(let hint):
+            PanelMessage(icon: "text.viewfinder", title: "Reading stop number…", detail: hint)
+        case .loading:
+            PanelMessage(icon: "clock.arrow.circlepath", title: "Loading departures…")
+        case .failure(_, let error):
+            PanelMessage(icon: "exclamationmark.triangle.fill", title: "Couldn't load departures", detail: error)
+        case .board(let board):
+            boardBody(board)
+        }
+    }
 
     @ViewBuilder
     private func boardBody(_ board: StopBoard) -> some View {
@@ -70,7 +81,18 @@ struct DeparturesPanelView: View {
     }
 }
 
-/// "Live · updated 18:54", or why only timetable times are shown.
+extension PanelContent {
+    /// The stop this content is about, if it's known.
+    var stopCode: String? {
+        switch self {
+        case .reading: nil
+        case .loading(let code): code
+        case .failure(let code, _): code
+        case .board(let board): board.stopCode
+        }
+    }
+}
+
 struct RealtimeStatusLabel: View {
     let issue: String?
     let updatedAt: Date

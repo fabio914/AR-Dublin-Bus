@@ -91,16 +91,15 @@ enum SignLayout {
     /// How far in front of the sign the departures card is.
     static let cardInFront: Float = 0.1
 
-    /// The centre of the departures card, relative to the sign's origin in the axes of an image
-    /// anchor (x right, y out of the sign, z down the sign), for a card `cardHeight` tall lying
-    /// flat on the sign.
+    /// The middle of the departures card's top edge, relative to the sign's origin in the axes of
+    /// an image anchor (x right, y out of the sign, z down the sign). The card lies flat on the sign.
     ///
     /// The sign's measurements scale with `referenceSize`, ARKit's estimate of its reference
     /// image's size; the card's gaps stay in metres.
-    static func cardCenter(kind: SignKind, referenceSize: SIMD2<Float>, cardHeight: Float) -> SIMD3<Float> {
+    static func cardTop(kind: SignKind, referenceSize: SIMD2<Float>) -> SIMD3<Float> {
         let geometry = geometry(of: kind)
         let scale = referenceSize.x / geometry.referenceSize.x
-        return SIMD3(0, cardInFront, geometry.bottomBelowOrigin * scale + cardBelowSign + cardHeight / 2)
+        return SIMD3(0, cardInFront, geometry.bottomBelowOrigin * scale + cardBelowSign)
     }
 
     /// The label's distance from the camera along its optical axis, from its size in the image.
