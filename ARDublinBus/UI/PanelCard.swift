@@ -7,12 +7,14 @@ import SwiftUI
 /// Inside a `PanelCardStack` the card is a `Section`, so its header and footer pin to the
 /// scroll view's edges while the body scrolls under them. Anywhere else it's drawn whole.
 /// Either way, don't apply modifiers to it: in a stack they'd apply to each part separately.
-struct PanelCard<Content: View, Footer: View>: View {
+struct PanelCard<Content: View, Footer: View, Banner: View>: View {
     let title: String
     var subtitle: String?
     var accessory: PanelHeader.Accessory?
     var favourite: PanelHeader.Favourite?
     var icon = "bus.fill"
+    /// Shown under the green title bar as part of the header, so it pins with it (e.g. a map).
+    let banner: Banner?
     let footer: Footer?
     let content: Content
 
@@ -23,12 +25,13 @@ struct PanelCard<Content: View, Footer: View>: View {
 
     init(title: String, subtitle: String? = nil, accessory: PanelHeader.Accessory? = nil,
          favourite: PanelHeader.Favourite? = nil, icon: String = "bus.fill",
-         footer: Footer?, @ViewBuilder content: () -> Content) {
+         banner: Banner?, footer: Footer?, @ViewBuilder content: () -> Content) {
         self.title = title
         self.subtitle = subtitle
         self.accessory = accessory
         self.favourite = favourite
         self.icon = icon
+        self.banner = banner
         self.footer = footer
         self.content = content()
     }
@@ -41,7 +44,12 @@ struct PanelCard<Content: View, Footer: View>: View {
                 }
                 .clippedUnderPinnedViews(headerHeight: headerHeight, footerHeight: footer == nil ? 0 : footerHeight)
             } header: {
-                PanelCardPiece(edge: .top) { header }
+                PanelCardPiece(edge: .top) {
+                    VStack(spacing: 0) {
+                        header
+                        banner
+                    }
+                }
                     // The gap above the card, kept when the header pins so it doesn't touch the
                     // top of the scroll view.
                     .padding(.top, PanelMetrics.cardSpacing)
@@ -55,6 +63,7 @@ struct PanelCard<Content: View, Footer: View>: View {
         } else {
             VStack(spacing: 0) {
                 header
+                banner
                 content
                 footer
             }
@@ -71,10 +80,20 @@ struct PanelCard<Content: View, Footer: View>: View {
     }
 }
 
-extension PanelCard where Footer == Never {
+extension PanelCard where Banner == Never {
+    init(title: String, subtitle: String? = nil, accessory: PanelHeader.Accessory? = nil,
+         favourite: PanelHeader.Favourite? = nil, icon: String = "bus.fill",
+         footer: Footer?, @ViewBuilder content: () -> Content) {
+        self.init(title: title, subtitle: subtitle, accessory: accessory, favourite: favourite, icon: icon,
+                  banner: nil, footer: footer, content: content)
+    }
+}
+
+extension PanelCard where Footer == Never, Banner == Never {
     init(title: String, subtitle: String? = nil, accessory: PanelHeader.Accessory? = nil,
          favourite: PanelHeader.Favourite? = nil, icon: String = "bus.fill", @ViewBuilder content: () -> Content) {
-        self.init(title: title, subtitle: subtitle, accessory: accessory, favourite: favourite, icon: icon, footer: nil, content: content)
+        self.init(title: title, subtitle: subtitle, accessory: accessory, favourite: favourite, icon: icon,
+                  banner: nil, footer: nil, content: content)
     }
 }
 

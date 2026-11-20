@@ -48,11 +48,7 @@ struct TripView: View {
     var body: some View {
         Group {
             if let journey {
-                VStack(spacing: 0) {
-                    TripMap(journey: journey)
-                        .frame(height: 200)
-                    TripStopsList(journey: journey)
-                }
+                TripStopsList(journey: journey)
             } else if let error {
                 ContentUnavailableView("Couldn't load this bus", systemImage: "exclamationmark.triangle", description: Text(error))
             } else {
@@ -111,7 +107,9 @@ private struct TripStopsList: View {
         ScrollViewReader { proxy in
             ScrollView {
                 PanelCardStack {
-                    PanelCard(title: "To \(journey.headsign)", subtitle: subtitle, icon: "bus.fill", footer: footer) {
+                    // The map is pinned with the header, so the stops slide under it.
+                    PanelCard(title: "To \(journey.headsign)", subtitle: subtitle, icon: "bus.fill",
+                              banner: TripMap(journey: journey).frame(height: RouteMap.height), footer: footer) {
                         if journey.isCancelled {
                             PanelMessage(icon: "xmark.octagon.fill", title: "This bus is cancelled")
                         }

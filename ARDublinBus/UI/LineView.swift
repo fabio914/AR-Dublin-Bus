@@ -23,11 +23,7 @@ struct LineView: View {
     var body: some View {
         Group {
             if let details, let direction = direction(in: details) {
-                VStack(spacing: 0) {
-                    map(details: details, direction: direction)
-                        .frame(height: 200)
-                    content(details: details, direction: direction)
-                }
+                content(details: details, direction: direction)
             } else if details != nil {
                 ContentUnavailableView("No buses leave from here", systemImage: "moon.zzz.fill",
                                        description: Text("This route doesn't pick up passengers at stop \(reference.stopCode)."))
@@ -63,6 +59,7 @@ struct LineView: View {
         details.directions.first { $0.id == directionID } ?? details.directions.first
     }
 
+    /// Pinned with the header of the stops card, so the stops slide under it.
     private func map(details: LineDetails, direction: LineDirection) -> some View {
         RouteMap(
             path: direction.shape,
@@ -80,6 +77,7 @@ struct LineView: View {
                 )
             }
         }
+        .frame(height: RouteMap.height)
     }
 
     private func content(details: LineDetails, direction: LineDirection) -> some View {
@@ -105,7 +103,7 @@ struct LineView: View {
                             case .timetable:
                                 LineTimetableCard(details: details, direction: direction, now: context.date)
                             case .stops:
-                                LineStopsCard(route: details.route, direction: direction)
+                                LineStopsCard(route: details.route, direction: direction, map: map(details: details, direction: direction))
                             }
                         }
                         .padding([.horizontal, .bottom], 16)
@@ -151,12 +149,15 @@ struct LineView: View {
 // MARK: - Stops
 
 /// Every stop of a typical trip as a timeline, with the time it takes to get there.
-private struct LineStopsCard: View {
+private struct LineStopsCard<Map: View>: View {
     let route: GTFSRoute
     let direction: LineDirection
+    /// Shown under the card's title, pinned with it.
+    let map: Map
 
     var body: some View {
-        PanelCard(title: "To \(direction.headsign)", subtitle: subtitle, icon: "point.topleft.down.to.point.bottomright.curvepath.fill", footer: footer) {
+        PanelCard(title: "To \(direction.headsign)", subtitle: subtitle, icon: "point.topleft.down.to.point.bottomright.curvepath.fill",
+                  banner: map, footer: footer) {
             VStack(spacing: 0) {
                 ForEach(Array(direction.stops.enumerated()), id: \.element.id) { index, stop in
                     // Every stop but the user's opens its own screen.
