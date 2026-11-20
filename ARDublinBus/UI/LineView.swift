@@ -92,11 +92,14 @@ struct LineView: View {
         .frame(height: RouteMap.height)
     }
 
-    /// The direction picker, as the cards' title, when the route has more than one.
-    private func towards(_ details: LineDetails, selected: LineDirection) -> PanelHeader.TitleMenu? {
+    /// Picks where the route goes (e.g. the 27 to Clare Hall, or to Eden Quay, which ends
+    /// sooner), from a button on the cards' header, when it has more than one destination.
+    private func towards(_ details: LineDetails, selected: LineDirection) -> PanelHeader.OptionsMenu? {
         guard details.directions.count > 1 else { return nil }
-        return PanelHeader.TitleMenu(
-            label: "Direction",
+        return PanelHeader.OptionsMenu(
+            label: "Destination",
+            // The route splitting towards its destinations.
+            systemImage: "arrow.trianglehead.branch",
             options: details.directions.map { .init(id: $0.id, title: "To \($0.headsign)") },
             selectedID: selected.id,
             select: { directionID = $0 }
@@ -144,14 +147,14 @@ struct LineView: View {
 private struct LineStopsCard<Map: View>: View {
     let route: GTFSRoute
     let direction: LineDirection
-    /// Picks the direction from the card's title.
-    let towards: PanelHeader.TitleMenu?
+    /// Picks the destination from a button on the card's header.
+    let towards: PanelHeader.OptionsMenu?
     /// Shown under the card's title, pinned with it.
     let map: Map
 
     var body: some View {
         PanelCard(title: "To \(direction.headsign)", subtitle: subtitle, icon: "point.topleft.down.to.point.bottomright.curvepath.fill",
-                  titleMenu: towards, banner: map, footer: footer) {
+                  optionsMenu: towards, banner: map, footer: footer) {
             VStack(spacing: 0) {
                 ForEach(Array(direction.stops.enumerated()), id: \.element.id) { index, stop in
                     // Every stop but the user's opens its own screen.
@@ -236,8 +239,8 @@ private struct LineStopRow: View {
 private struct LineTimetableCard: View {
     let details: LineDetails
     let direction: LineDirection
-    /// Picks the direction from the card's title.
-    let towards: PanelHeader.TitleMenu?
+    /// Picks the destination from a button on the card's header.
+    let towards: PanelHeader.OptionsMenu?
     let now: Date
     @State private var dayOffset = 0
 
@@ -251,7 +254,7 @@ private struct LineTimetableCard: View {
 
         PanelCard(title: "To \(direction.headsign)",
                   subtitle: "Route \(details.route.shortName) · Stop \(details.stop.code) · \(dayName(date, today: today))",
-                  icon: "calendar", titleMenu: towards, footer: footer) {
+                  icon: "calendar", optionsMenu: towards, footer: footer) {
             dayPicker(today: today)
                 .padding(.vertical, 10)
             PanelSeparator()
