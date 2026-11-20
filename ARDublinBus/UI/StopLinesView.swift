@@ -108,7 +108,7 @@ struct StopLinesCard: View {
     let board: StopBoard?
     let now: Date
 
-    static let mapHeight: CGFloat = 240
+    static let mapHeight: CGFloat = 200
 
     var body: some View {
         PanelCard(title: "Lines", subtitle: subtitle, icon: "point.topleft.down.to.point.bottomright.curvepath.fill", footer: footer) {

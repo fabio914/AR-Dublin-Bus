@@ -64,8 +64,10 @@ struct PanelCard<Content: View, Footer: View>: View {
         }
     }
 
+    /// Smaller in the app than on the AR panel, where it's read from a distance.
     private var header: PanelHeader {
-        PanelHeader(title: title, subtitle: subtitle, accessory: accessory, favourite: favourite, icon: icon)
+        PanelHeader(title: title, subtitle: subtitle, accessory: accessory, favourite: favourite, icon: icon,
+                    scale: pins ? PanelHeader.inAppScale : 1)
     }
 }
 
@@ -204,21 +206,27 @@ struct PanelHeader: View {
     var accessory: Accessory?
     var favourite: Favourite?
     var icon = "bus.fill"
+    /// Scales the header's icons, text and vertical spacing (not its side padding, which lines
+    /// it up with the card's rows).
+    var scale: CGFloat = 1
+
+    /// The scale of the headers of the in-app cards, 25% smaller than on the AR panel.
+    static let inAppScale: CGFloat = 0.75
 
     var body: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: 12 * scale) {
             Image(systemName: icon)
-                .font(.system(size: 22, weight: .semibold))
-                .frame(width: 44, height: 44)
-                .background(Color.white.opacity(0.18), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-            VStack(alignment: .leading, spacing: 2) {
+                .font(.system(size: 22 * scale, weight: .semibold))
+                .frame(width: 44 * scale, height: 44 * scale)
+                .background(Color.white.opacity(0.18), in: RoundedRectangle(cornerRadius: 10 * scale, style: .continuous))
+            VStack(alignment: .leading, spacing: 2 * scale) {
                 Text(title)
-                    .font(.system(size: 22, weight: .bold, design: .rounded))
+                    .font(.system(size: 22 * scale, weight: .bold, design: .rounded))
                     .lineLimit(1)
                     .minimumScaleFactor(0.7)
                 if let subtitle {
                     Text(subtitle)
-                        .font(.system(size: 15, weight: .medium))
+                        .font(.system(size: 15 * scale, weight: .medium))
                         .opacity(0.85)
                         .lineLimit(1)
                 }
@@ -226,18 +234,19 @@ struct PanelHeader: View {
             Spacer(minLength: 0)
             if let accessory {
                 Label(accessory.text, systemImage: accessory.systemImage)
-                    .font(.system(size: 14, weight: .semibold))
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 6)
+                    .font(.system(size: 14 * scale, weight: .semibold))
+                    .padding(.horizontal, 10 * scale)
+                    .padding(.vertical, 6 * scale)
                     .background(Color.white.opacity(0.18), in: Capsule())
                     .fixedSize()
             }
             if let favourite {
                 Button(action: favourite.toggle) {
                     Image(systemName: favourite.isOn ? "star.fill" : "star")
-                        .font(.system(size: 20, weight: .semibold))
+                        .font(.system(size: 20 * scale, weight: .semibold))
                         .foregroundStyle(favourite.isOn ? TFIColors.yellow : .white)
-                        .frame(width: 36, height: 36)
+                        // Kept wide enough to tap easily; no taller than the icon on the left.
+                        .frame(width: 36, height: min(36, 44 * scale))
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
@@ -247,7 +256,7 @@ struct PanelHeader: View {
         }
         .foregroundStyle(.white)
         .padding(.horizontal, PanelMetrics.horizontalPadding)
-        .padding(.vertical, 14)
+        .padding(.vertical, 14 * scale)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(TFIColors.green)
     }

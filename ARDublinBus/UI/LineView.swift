@@ -25,7 +25,7 @@ struct LineView: View {
             if let details, let direction = direction(in: details) {
                 VStack(spacing: 0) {
                     map(details: details, direction: direction)
-                        .frame(height: 260)
+                        .frame(height: 200)
                     content(details: details, direction: direction)
                 }
             } else if details != nil {

@@ -24,7 +24,7 @@ struct TripView: View {
             if let journey {
                 VStack(spacing: 0) {
                     TripMap(journey: journey)
-                        .frame(height: 260)
+                        .frame(height: 200)
                     TripStopsList(journey: journey)
                 }
             } else if let error {
