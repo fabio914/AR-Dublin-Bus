@@ -100,6 +100,62 @@ extension PanelCard where Footer == Never, Banner == Never {
     }
 }
 
+/// A titled card of rows, like a list's section, without a green header. In a `PanelCardStack`
+/// its title and the card's top edge (with its rounded corners) pin as the section's header,
+/// and the card's bottom edge as its footer, while the rows scroll under them.
+struct PanelListSection<Content: View>: View {
+    let title: String
+    let systemImage: String
+    @ViewBuilder let content: Content
+
+    @Environment(\.panelCardPins) private var pins
+    @State private var headerHeight: CGFloat = 0
+    @State private var footerHeight: CGFloat = 0
+
+    /// The card's top and bottom edges are as tall as its rounded corners, and the rows tuck
+    /// this much of their own padding under them.
+    static var edgeOverlap: CGFloat { 6 }
+
+    var body: some View {
+        if pins {
+            Section {
+                PanelCardPiece(edge: nil) {
+                    content.padding(.vertical, -Self.edgeOverlap)
+                }
+                .clippedUnderPinnedViews(headerHeight: headerHeight, footerHeight: footerHeight)
+            } header: {
+                VStack(spacing: 8) {
+                    label
+                    PanelCardPiece(edge: .top) { edge }
+                }
+                .padding(.top, PanelMetrics.cardSpacing)
+                .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { headerHeight = $0 }
+            } footer: {
+                PanelCardPiece(edge: .bottom) { edge }
+                    .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { footerHeight = $0 }
+            }
+        } else {
+            VStack(spacing: 8) {
+                label
+                VStack(spacing: 0) { content }
+                    .padding(.vertical, 4)
+                    .background(Color.appCard)
+                    .clipShape(RoundedRectangle(cornerRadius: PanelMetrics.cornerRadius, style: .continuous))
+            }
+        }
+    }
+
+    private var label: some View {
+        Label(title, systemImage: systemImage)
+            .font(.headline)
+            .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var edge: some View {
+        Color.clear.frame(height: PanelMetrics.cornerRadius - Self.edgeOverlap)
+    }
+}
+
 /// A slice of a card in a `PanelCardStack`: the card's background and shadow, with the card's
 /// rounded corners on `edge` (if any). The shadow is cut off where the slice meets the next
 /// one, so the slices look like one card.

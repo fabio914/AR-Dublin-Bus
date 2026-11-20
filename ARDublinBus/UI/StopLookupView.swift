@@ -20,53 +20,24 @@ struct StopLookupView: View {
     var body: some View {
         NavigationStack(path: $path) {
             ScrollView {
-                VStack(spacing: 16) {
-                    HStack {
-                        HStack(spacing: 6) {
-                            Image(systemName: "magnifyingglass")
-                                .foregroundStyle(.secondary)
-                            TextField("Stop or route, by number or name", text: $input)
-                                .textInputAutocapitalization(.never)
-                                .autocorrectionDisabled()
-                                .submitLabel(.search)
-                                .focused($isInputFocused)
-                                .onSubmit(searchNow)
-                            if !input.isEmpty {
-                                Button {
-                                    // Back to the favourites, with the keyboard down.
-                                    input = ""
-                                    isInputFocused = false
-                                } label: {
-                                    Image(systemName: "xmark.circle.fill")
-                                        .foregroundStyle(.secondary)
-                                }
-                                .buttonStyle(.plain)
-                                .accessibilityLabel("Clear")
-                            }
-                        }
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 8)
-                        .background(Color.appCard, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-
-                        // Only while typing; the keyboard's own search key does the same.
-                        if isInputFocused {
-                            Button("Search", action: searchNow)
-                                .buttonStyle(.borderedProminent)
-                                .tint(TFIColors.green)
-                                .disabled(query.isEmpty)
-                                .transition(.move(edge: .trailing).combined(with: .opacity))
-                        }
-                    }
-                    .animation(.default, value: isInputFocused)
+                VStack(spacing: 0) {
                     content
                 }
-                .padding()
+                .padding([.horizontal, .bottom])
             }
             .scrollDismissesKeyboard(.interactively)
             .panelCardScrollView()
-            .background(Color.appBackground)
+            // Also under the keyboard, which has rounded corners.
+            .background { Color.appBackground.ignoresSafeArea() }
             .navigationTitle("Search")
             .navigationBarTitleDisplayMode(.inline)
+            .searchable(text: $input, placement: .navigationBarDrawer(displayMode: .always),
+                        prompt: "Stop or route, by number or name")
+            .searchFocused($isInputFocused)
+            .textInputAutocapitalization(.never)
+            .autocorrectionDisabled()
+            // The keyboard's search key searches at once (results otherwise follow the typing).
+            .onSubmit(of: .search, searchNow)
             .navigationDestination(for: FavouriteStop.self) { StopBoardScreen(stopCode: $0.code) }
             .navigationDestination(for: StopSearchResult.self) { StopBoardScreen(stopCode: $0.stop.code) }
             .routeDestinations()
@@ -94,6 +65,7 @@ struct StopLookupView: View {
                 .font(.footnote)
                 .foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.top, 16)
         } else if searchedQuery == nil {
             ProgressView()
                 .padding(.top, 24)
@@ -102,20 +74,22 @@ struct StopLookupView: View {
                 .font(.footnote)
                 .foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.top, 16)
         } else {
-            if !routeResults.isEmpty {
-                ResultsHeading(title: "Routes", systemImage: "point.topleft.down.to.point.bottomright.curvepath.fill")
-                RouteResultsCard(routes: routeResults) { route in
-                    isInputFocused = false
-                    // A route on its own, from where its trips start.
-                    path.append(LineReference(routeID: route.id, stopCode: nil))
+            // Each section brings the space above it.
+            PanelCardStack {
+                if !routeResults.isEmpty {
+                    RouteResultsSection(routes: routeResults) { route in
+                        isInputFocused = false
+                        // A route on its own, from where its trips start.
+                        path.append(LineReference(routeID: route.id, stopCode: nil))
+                    }
                 }
-            }
-            if !results.isEmpty {
-                ResultsHeading(title: "Stops", systemImage: "bus.fill")
-                StopResultsCard(results: results) { result in
-                    isInputFocused = false
-                    path.append(result)
+                if !results.isEmpty {
+                    StopResultsSection(results: results) { result in
+                        isInputFocused = false
+                        path.append(result)
+                    }
                 }
             }
         }
@@ -165,6 +139,7 @@ private struct FavouriteStopsSection: View {
                 .font(.footnote)
                 .foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.top, 16)
             } else {
                 VStack(spacing: 16) {
                     HStack(spacing: 6) {
@@ -186,6 +161,7 @@ private struct FavouriteStopsSection: View {
                         .foregroundStyle(.secondary)
                     }
                 }
+                .padding(.top, 16)
                 // Each card brings the space above it.
                 PanelCardStack {
                     ForEach(favourites) { favourite in
@@ -229,25 +205,13 @@ private struct FavouriteStopsSection: View {
     }
 }
 
-/// A label above a group of search results.
-private struct ResultsHeading: View {
-    let title: String
-    let systemImage: String
-
-    var body: some View {
-        Label(title, systemImage: systemImage)
-            .font(.headline)
-            .frame(maxWidth: .infinity, alignment: .leading)
-    }
-}
-
 /// Matching routes, each with its number and where it runs between.
-private struct RouteResultsCard: View {
+private struct RouteResultsSection: View {
     let routes: [GTFSRoute]
     let select: (GTFSRoute) -> Void
 
     var body: some View {
-        VStack(spacing: 0) {
+        PanelListSection(title: "Routes", systemImage: "point.topleft.down.to.point.bottomright.curvepath.fill") {
             ForEach(Array(routes.enumerated()), id: \.element.id) { index, route in
                 if index > 0 { PanelSeparator() }
                 Button { select(route) } label: {
@@ -257,10 +221,6 @@ private struct RouteResultsCard: View {
                 .buttonStyle(.plain)
             }
         }
-        .padding(.vertical, 4)
-        .background(Color.appCard)
-        .clipShape(RoundedRectangle(cornerRadius: PanelMetrics.cornerRadius, style: .continuous))
-        .shadow(color: PanelMetrics.shadowColor, radius: PanelMetrics.shadowRadius, y: PanelMetrics.shadowOffset)
     }
 }
 
@@ -295,12 +255,12 @@ private struct RouteResultRow: View {
 }
 
 /// Matching stops, each with the routes that call there.
-private struct StopResultsCard: View {
+private struct StopResultsSection: View {
     let results: [StopSearchResult]
     let select: (StopSearchResult) -> Void
 
     var body: some View {
-        VStack(spacing: 0) {
+        PanelListSection(title: "Stops", systemImage: "bus.fill") {
             ForEach(Array(results.enumerated()), id: \.element.id) { index, result in
                 if index > 0 { PanelSeparator() }
                 Button { select(result) } label: {
@@ -310,10 +270,6 @@ private struct StopResultsCard: View {
                 .buttonStyle(.plain)
             }
         }
-        .padding(.vertical, 4)
-        .background(Color.appCard)
-        .clipShape(RoundedRectangle(cornerRadius: PanelMetrics.cornerRadius, style: .continuous))
-        .shadow(color: .black.opacity(0.12), radius: 10, y: 3)
     }
 }
 
