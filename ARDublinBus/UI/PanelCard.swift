@@ -13,6 +13,8 @@ struct PanelCard<Content: View, Footer: View, Banner: View>: View {
     var accessory: PanelHeader.Accessory?
     var favourite: PanelHeader.Favourite?
     var icon = "bus.fill"
+    /// Makes the title a menu, e.g. for picking a route's direction.
+    var titleMenu: PanelHeader.TitleMenu?
     /// Shown under the green title bar as part of the header, so it pins with it (e.g. a map).
     let banner: Banner?
     let footer: Footer?
@@ -24,13 +26,14 @@ struct PanelCard<Content: View, Footer: View, Banner: View>: View {
     @State private var footerHeight: CGFloat = 0
 
     init(title: String, subtitle: String? = nil, accessory: PanelHeader.Accessory? = nil,
-         favourite: PanelHeader.Favourite? = nil, icon: String = "bus.fill",
+         favourite: PanelHeader.Favourite? = nil, icon: String = "bus.fill", titleMenu: PanelHeader.TitleMenu? = nil,
          banner: Banner?, footer: Footer?, @ViewBuilder content: () -> Content) {
         self.title = title
         self.subtitle = subtitle
         self.accessory = accessory
         self.favourite = favourite
         self.icon = icon
+        self.titleMenu = titleMenu
         self.banner = banner
         self.footer = footer
         self.content = content()
@@ -76,16 +79,16 @@ struct PanelCard<Content: View, Footer: View, Banner: View>: View {
     /// Smaller in the app than on the AR panel, where it's read from a distance.
     private var header: PanelHeader {
         PanelHeader(title: title, subtitle: subtitle, accessory: accessory, favourite: favourite, icon: icon,
-                    scale: pins ? PanelHeader.inAppScale : 1)
+                    titleMenu: titleMenu, scale: pins ? PanelHeader.inAppScale : 1)
     }
 }
 
 extension PanelCard where Banner == Never {
     init(title: String, subtitle: String? = nil, accessory: PanelHeader.Accessory? = nil,
-         favourite: PanelHeader.Favourite? = nil, icon: String = "bus.fill",
+         favourite: PanelHeader.Favourite? = nil, icon: String = "bus.fill", titleMenu: PanelHeader.TitleMenu? = nil,
          footer: Footer?, @ViewBuilder content: () -> Content) {
         self.init(title: title, subtitle: subtitle, accessory: accessory, favourite: favourite, icon: icon,
-                  banner: nil, footer: footer, content: content)
+                  titleMenu: titleMenu, banner: nil, footer: footer, content: content)
     }
 }
 
@@ -220,17 +223,61 @@ struct PanelHeader: View {
         let toggle: () -> Void
     }
 
+    /// Choices shown when the title is tapped, the selected one being the title.
+    struct TitleMenu {
+        struct Option: Identifiable {
+            let id: String
+            let title: String
+        }
+
+        /// What's being chosen, for accessibility (e.g. "Direction").
+        let label: String
+        let options: [Option]
+        let selectedID: String
+        let select: (String) -> Void
+    }
+
     let title: String
     var subtitle: String?
     var accessory: Accessory?
     var favourite: Favourite?
     var icon = "bus.fill"
+    var titleMenu: TitleMenu?
     /// Scales the header's icons, text and vertical spacing (not its side padding, which lines
     /// it up with the card's rows).
     var scale: CGFloat = 1
 
     /// The scale of the headers of the in-app cards, 25% smaller than on the AR panel.
     static let inAppScale: CGFloat = 0.75
+
+    @ViewBuilder
+    private var titleView: some View {
+        let text = Text(title)
+            .font(.system(size: 22 * scale, weight: .bold, design: .rounded))
+            .lineLimit(1)
+            .minimumScaleFactor(0.7)
+        if let titleMenu {
+            Menu {
+                Picker(titleMenu.label, selection: Binding(get: { titleMenu.selectedID }, set: titleMenu.select)) {
+                    ForEach(titleMenu.options) { Text($0.title).tag($0.id) }
+                }
+            } label: {
+                HStack(spacing: 4 * scale) {
+                    text
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 13 * scale, weight: .bold))
+                        .opacity(0.85)
+                }
+                .foregroundStyle(.white)
+                .contentShape(Rectangle())
+            }
+            .menuIndicator(.hidden)
+            .buttonStyle(.plain)
+            .accessibilityLabel("\(titleMenu.label): \(title)")
+        } else {
+            text
+        }
+    }
 
     var body: some View {
         HStack(spacing: 12 * scale) {
@@ -239,10 +286,7 @@ struct PanelHeader: View {
                 .frame(width: 44 * scale, height: 44 * scale)
                 .background(Color.white.opacity(0.18), in: RoundedRectangle(cornerRadius: 10 * scale, style: .continuous))
             VStack(alignment: .leading, spacing: 2 * scale) {
-                Text(title)
-                    .font(.system(size: 22 * scale, weight: .bold, design: .rounded))
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.7)
+                titleView
                 if let subtitle {
                     Text(subtitle)
                         .font(.system(size: 15 * scale, weight: .medium))

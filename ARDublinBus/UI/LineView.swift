@@ -37,6 +37,18 @@ struct LineView: View {
         .background(Color.appBackground)
         .navigationTitle(details.map { "Route \($0.route.shortName)" } ?? "Route")
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            // In place of the title; the route is in the cards' subtitles.
+            if let details, direction(in: details) != nil {
+                ToolbarItem(placement: .principal) {
+                    Picker("Show", selection: $section) {
+                        ForEach(Section.allCases) { Text($0.rawValue).tag($0) }
+                    }
+                    .pickerStyle(.segmented)
+                    .fixedSize()
+                }
+            }
+        }
         .task(id: reference) {
             do {
                 details = try await model.service.line(reference)
@@ -80,42 +92,40 @@ struct LineView: View {
         .frame(height: RouteMap.height)
     }
 
-    private func content(details: LineDetails, direction: LineDirection) -> some View {
-        VStack(spacing: 0) {
-            // Kept in view while the list scrolls to the user's stop.
-            VStack(spacing: 10) {
-                if details.directions.count > 1 {
-                    directionPicker(details.directions, selected: direction)
-                }
-                Picker("Show", selection: $section) {
-                    ForEach(Section.allCases) { Text($0.rawValue).tag($0) }
-                }
-                .pickerStyle(.segmented)
-            }
-            .padding(.horizontal, 16)
-            .padding(.top, 10)
+    /// The direction picker, as the cards' title, when the route has more than one.
+    private func towards(_ details: LineDetails, selected: LineDirection) -> PanelHeader.TitleMenu? {
+        guard details.directions.count > 1 else { return nil }
+        return PanelHeader.TitleMenu(
+            label: "Direction",
+            options: details.directions.map { .init(id: $0.id, title: "To \($0.headsign)") },
+            selectedID: selected.id,
+            select: { directionID = $0 }
+        )
+    }
 
-            ScrollViewReader { proxy in
-                ScrollView {
-                    TimelineView(.periodic(from: .now, by: 30)) { context in
-                        PanelCardStack {
-                            switch section {
-                            case .timetable:
-                                LineTimetableCard(details: details, direction: direction, now: context.date)
-                            case .stops:
-                                LineStopsCard(route: details.route, direction: direction, map: map(details: details, direction: direction))
-                            }
+    private func content(details: LineDetails, direction: LineDirection) -> some View {
+        ScrollViewReader { proxy in
+            ScrollView {
+                TimelineView(.periodic(from: .now, by: 30)) { context in
+                    PanelCardStack {
+                        switch section {
+                        case .timetable:
+                            LineTimetableCard(details: details, direction: direction, towards: towards(details, selected: direction),
+                                              now: context.date)
+                        case .stops:
+                            LineStopsCard(route: details.route, direction: direction, towards: towards(details, selected: direction),
+                                          map: map(details: details, direction: direction))
                         }
-                        .padding([.horizontal, .bottom], 16)
                     }
+                    .padding([.horizontal, .bottom], 16)
                 }
-                .panelCardScrollView()
-                .onAppear { scrollToStop(proxy, direction: direction) }
-                // A scroll view of its own for each list (which scrolls to the stop as it
-                // appears), so switching lists doesn't keep an offset past the end of a shorter
-                // one, where the lazy stack shows nothing.
-                .id("\(section.id)-\(direction.id)")
             }
+            .panelCardScrollView()
+            .onAppear { scrollToStop(proxy, direction: direction) }
+            // A scroll view of its own for each list (which scrolls to the stop as it appears),
+            // so switching lists doesn't keep an offset past the end of a shorter one, where the
+            // lazy stack shows nothing.
+            .id("\(section.id)-\(direction.id)")
         }
     }
 
@@ -126,24 +136,6 @@ struct LineView: View {
             proxy.scrollTo(direction.stops[direction.stopIndex].id, anchor: .center)
         }
     }
-
-    private func directionPicker(_ directions: [LineDirection], selected: LineDirection) -> some View {
-        HStack {
-            Text("Towards")
-                .font(.system(size: 15, weight: .medium))
-                .foregroundStyle(Color.cardSecondaryInk)
-            Spacer(minLength: 8)
-            Picker("Towards", selection: Binding(get: { selected.id }, set: { directionID = $0 })) {
-                ForEach(directions) { Text($0.headsign).tag($0.id) }
-            }
-            .pickerStyle(.menu)
-            .tint(Color.appTint)
-        }
-        .padding(.leading, PanelMetrics.horizontalPadding)
-        .padding(.trailing, 4)
-        .padding(.vertical, 4)
-        .background(Color.appCard, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-    }
 }
 
 // MARK: - Stops
@@ -152,12 +144,14 @@ struct LineView: View {
 private struct LineStopsCard<Map: View>: View {
     let route: GTFSRoute
     let direction: LineDirection
+    /// Picks the direction from the card's title.
+    let towards: PanelHeader.TitleMenu?
     /// Shown under the card's title, pinned with it.
     let map: Map
 
     var body: some View {
         PanelCard(title: "To \(direction.headsign)", subtitle: subtitle, icon: "point.topleft.down.to.point.bottomright.curvepath.fill",
-                  banner: map, footer: footer) {
+                  titleMenu: towards, banner: map, footer: footer) {
             VStack(spacing: 0) {
                 ForEach(Array(direction.stops.enumerated()), id: \.element.id) { index, stop in
                     // Every stop but the user's opens its own screen.
@@ -242,6 +236,8 @@ private struct LineStopRow: View {
 private struct LineTimetableCard: View {
     let details: LineDetails
     let direction: LineDirection
+    /// Picks the direction from the card's title.
+    let towards: PanelHeader.TitleMenu?
     let now: Date
     @State private var dayOffset = 0
 
@@ -253,7 +249,9 @@ private struct LineTimetableCard: View {
         let departures = direction.timetable(on: date, services: details.services)
         let next = dayOffset == 0 ? departures.first { $0.time >= now } : nil
 
-        PanelCard(title: "Timetable", subtitle: "From stop \(details.stop.code) · \(dayName(date, today: today))", icon: "calendar", footer: footer) {
+        PanelCard(title: "To \(direction.headsign)",
+                  subtitle: "Route \(details.route.shortName) · Stop \(details.stop.code) · \(dayName(date, today: today))",
+                  icon: "calendar", titleMenu: towards, footer: footer) {
             dayPicker(today: today)
                 .padding(.vertical, 10)
             PanelSeparator()
