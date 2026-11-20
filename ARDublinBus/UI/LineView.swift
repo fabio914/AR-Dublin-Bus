@@ -159,12 +159,15 @@ private struct LineStopsCard: View {
         PanelCard(title: "To \(direction.headsign)", subtitle: subtitle, icon: "point.topleft.down.to.point.bottomright.curvepath.fill", footer: footer) {
             VStack(spacing: 0) {
                 ForEach(Array(direction.stops.enumerated()), id: \.element.id) { index, stop in
-                    LineStopRow(
-                        stop: stop,
-                        position: index < direction.stopIndex ? .before : index == direction.stopIndex ? .here : .after,
-                        isFirst: index == 0,
-                        isLast: index == direction.stops.count - 1
-                    )
+                    // Every stop but the user's opens its own screen.
+                    StopLink(stopCode: stop.stop.code, isEnabled: index != direction.stopIndex) {
+                        LineStopRow(
+                            stop: stop,
+                            position: index < direction.stopIndex ? .before : index == direction.stopIndex ? .here : .after,
+                            isFirst: index == 0,
+                            isLast: index == direction.stops.count - 1
+                        )
+                    }
                     .id(stop.id)
                 }
             }

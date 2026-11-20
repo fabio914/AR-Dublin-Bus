@@ -2,11 +2,37 @@ import MapKit
 import SwiftUI
 
 extension View {
-    /// Lets `NavigationLink(value: TripReference)` rows open a bus's trip, and
-    /// `NavigationLink(value: LineReference)` rows open a route's line screen.
+    /// Lets `NavigationLink(value: TripReference)` rows open a bus's trip,
+    /// `NavigationLink(value: LineReference)` rows open a route's line screen, and
+    /// `NavigationLink(value: StopReference)` rows open a stop's screen.
     func routeDestinations() -> some View {
         navigationDestination(for: TripReference.self) { TripView(reference: $0) }
             .navigationDestination(for: LineReference.self) { LineView(reference: $0) }
+            .navigationDestination(for: StopReference.self) { StopBoardScreen(stopCode: $0.code) }
+    }
+}
+
+/// A stop to open from a route's list of stops.
+struct StopReference: Hashable {
+    let code: String
+}
+
+/// A row that opens a stop's screen when tapped (inside a `NavigationStack` using
+/// `routeDestinations()`), or just the row when it's not enabled.
+struct StopLink<Label: View>: View {
+    let stopCode: String
+    var isEnabled = true
+    @ViewBuilder let label: Label
+
+    var body: some View {
+        if isEnabled {
+            NavigationLink(value: StopReference(code: stopCode)) {
+                label.contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+        } else {
+            label
+        }
     }
 }
 
@@ -91,12 +117,16 @@ private struct TripStopsList: View {
                         }
                         VStack(spacing: 0) {
                             ForEach(Array(journey.stops.enumerated()), id: \.element.id) { index, stop in
-                                TripStopRow(
-                                    stop: stop,
-                                    isOrigin: stop.sequence == journey.reference.stopSequence,
-                                    isFirst: index == 0,
-                                    isLast: index == journey.stops.count - 1
-                                )
+                                let isOrigin = stop.sequence == journey.reference.stopSequence
+                                // Every stop but the one the bus was picked from opens its own screen.
+                                StopLink(stopCode: stop.stop.code, isEnabled: !isOrigin) {
+                                    TripStopRow(
+                                        stop: stop,
+                                        isOrigin: isOrigin,
+                                        isFirst: index == 0,
+                                        isLast: index == journey.stops.count - 1
+                                    )
+                                }
                                 .id(stop.id)
                             }
                         }
