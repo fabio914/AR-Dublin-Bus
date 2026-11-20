@@ -124,3 +124,51 @@ struct StopSearchIndex: Sendable {
             .map(String.init)
     }
 }
+
+/// A route found by `RouteSearch`, with where its trips go.
+struct RouteSearchResult: Identifiable, Hashable, Sendable {
+    let route: GTFSRoute
+    /// Its trips' headsigns, the most frequent first (e.g. Jobstown, Clare Hall, Eden Quay).
+    let destinations: [String]
+
+    var id: String { route.id }
+}
+
+/// Finds routes by number, name or destination, as the user types.
+///
+/// A single word matches route numbers by prefix ("27" finds 27, 27A, 27B…; "c" finds C1, C2…).
+/// Otherwise every word must match the start of a word of the route's name or destinations
+/// ("eden" finds the 27, which also goes to Eden Quay), or the route's number ("27 clare").
+enum RouteSearch {
+    static func search(_ query: String, in routes: some Sequence<RouteSearchResult>, limit: Int) -> [RouteSearchResult] {
+        let tokens = StopSearchIndex.words(in: query)
+        guard !tokens.isEmpty else { return [] }
+
+        var matches: [(result: RouteSearchResult, rank: Int)] = []
+        for result in routes {
+            let number = StopSearchIndex.words(in: result.route.shortName).joined()
+            let words = StopSearchIndex.words(in: ([result.route.longName] + result.destinations).joined(separator: " "))
+            let rank: Int
+            if tokens == [number] {
+                rank = 0
+            } else if tokens.count == 1, number.hasPrefix(tokens[0]) {
+                rank = 1
+            } else if tokens.allSatisfy({ token in token == number || words.contains { $0.hasPrefix(token) } }) {
+                rank = 2
+            } else {
+                continue
+            }
+            matches.append((result, rank))
+        }
+
+        return matches
+            .sorted { lhs, rhs in
+                if lhs.rank != rhs.rank { return lhs.rank < rhs.rank }
+                let order = lhs.result.route.shortName.localizedStandardCompare(rhs.result.route.shortName)
+                if order != .orderedSame { return order == .orderedAscending }
+                return lhs.result.route.longName < rhs.result.route.longName
+            }
+            .prefix(limit)
+            .map(\.result)
+    }
+}

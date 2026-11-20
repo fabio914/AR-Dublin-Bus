@@ -143,6 +143,12 @@ final class AppModel {
         }
     }
 
+    /// The stop's card folded away: stop refreshing its board, unless another stop took over.
+    func deactivate(stopCode: String) {
+        guard activeStopCode == stopCode else { return }
+        signLost()
+    }
+
     func signLost() {
         activeStopCode = nil
         refreshTask?.cancel()

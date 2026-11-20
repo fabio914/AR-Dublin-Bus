@@ -108,10 +108,10 @@ struct GeoAlignmentTests {
 
 struct StopPinTests {
     @Test func distancesAreRounded() {
-        #expect(StopPinEntity.roundedDistance(42) == 40)
-        #expect(StopPinEntity.roundedDistance(43) == 45)
-        #expect(StopPinEntity.roundedDistance(123) == 120)
-        #expect(StopPinEntity.roundedDistance(386) == 390)
+        #expect(DistanceLabel.rounded(42) == 40)
+        #expect(DistanceLabel.rounded(43) == 45)
+        #expect(DistanceLabel.rounded(123) == 120)
+        #expect(DistanceLabel.rounded(386) == 390)
     }
 
     @Test func labelsGrowWithDistanceWithinLimits() {

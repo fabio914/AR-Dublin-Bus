@@ -1,19 +1,28 @@
 import ARKit
 import UIKit
 
-/// Geometry of the TFI bus stop flag, relative to the detected bus pictogram.
+/// The images ARKit looks for on bus stop signs, and where the stop number is relative to them.
 ///
-/// The reference image (`BusStopIcon.png`) is the top of the green panel on the
-/// flag: the white bus pictogram, edge to edge across the panel. It was cut from
-/// a photo of a Dublin stop flag and perspective-corrected, since the NTA does not publish
-/// the artwork. The "Stop 1234" line sits directly underneath it.
+/// Neither the NTA nor Dublin Bus publishes the artwork, so both images were cut from photos and
+/// perspective-corrected:
+/// - `BusStopIcon.png`: the top of the green panel on a TFI flag, the white bus pictogram edge
+///   to edge across the panel. The round green signs show the same pictogram, so it finds them
+///   too; which of the two it is, is told from the text under it.
+/// - `DublinBusLogo.png`: the Dublin Bus logo and "BUS" on the older round yellow sign,
+///   cleaned up to two colours. "STOP NO." and the number are below it.
 enum BusStopSign {
-    static let referenceImageName = "BusStopIcon"
+    static let flagImageName = "BusStopIcon"
+    static let dublinBusImageName = "DublinBusLogo"
 
-    /// Printed width of the green panel, in metres (see `SignLayout`). ARKit uses it to judge
-    /// distance; `automaticImageScaleEstimationEnabled` refines it at runtime. It used to be
-    /// 0.35 m, 19% short, which put new anchors too close until ARKit corrected itself.
-    static let physicalWidth = CGFloat(SignLayout.panelWidth)
+    /// The kind of sign a reference image is first taken to be on. A flag's pictogram may turn
+    /// out to be on a round green sign.
+    static func kind(ofReferenceImage name: String?) -> SignKind? {
+        switch name {
+        case flagImageName: .flag
+        case dublinBusImageName: .yellowDisc
+        default: nil
+        }
+    }
 
     /// A region of the sign below (positive) or above (negative) the reference image,
     /// in multiples of the reference image's height, centred horizontally.
@@ -26,18 +35,32 @@ enum BusStopSign {
         let widthFactor: Float
     }
 
-    /// The "Stop 271" line, with some margin for scale errors. On measured signs the label
-    /// spans about 0.01–0.25 of the reference image's height below it.
-    static let stopNumberRegion = Region(top: -0.02, bottom: 0.42, widthFactor: 1.1)
+    /// The stop number's lines, with some margin for scale errors.
+    static func stopNumberRegion(for kind: SignKind) -> Region {
+        switch kind {
+        // "Stop 271": about 0.01–0.25 of the reference image's height below it.
+        case .flag: Region(top: -0.02, bottom: 0.42, widthFactor: 1.1)
+        // "Stop" and the number: -0.02–0.56, in the middle 40% of the (wide) flag image.
+        case .greenDisc: Region(top: -0.1, bottom: 0.65, widthFactor: 0.6)
+        // "STOP NO." and the number: -0.01–0.34, in the middle 70% of the logo image.
+        case .yellowDisc: Region(top: -0.05, bottom: 0.45, widthFactor: 0.9)
+        }
+    }
 
     static func makeReferenceImages() -> Set<ARReferenceImage> {
-        guard let image = UIImage(named: referenceImageName)?.cgImage else {
-            assertionFailure("Missing \(referenceImageName).png")
-            return []
-        }
-        let reference = ARReferenceImage(image, orientation: .up, physicalWidth: physicalWidth)
-        reference.name = referenceImageName
-        return [reference]
+        let images: [(name: String, kind: SignKind)] = [(flagImageName, .flag), (dublinBusImageName, .yellowDisc)]
+        return Set(images.compactMap { name, kind in
+            guard let image = UIImage(named: name)?.cgImage else {
+                assertionFailure("Missing \(name).png")
+                return nil
+            }
+            // ARKit uses the printed width to judge distance; `automaticImageScaleEstimationEnabled`
+            // refines it at runtime.
+            let width = CGFloat(SignLayout.geometry(of: kind).referenceSize.x)
+            let reference = ARReferenceImage(image, orientation: .up, physicalWidth: width)
+            reference.name = name
+            return reference
+        })
     }
 }
 

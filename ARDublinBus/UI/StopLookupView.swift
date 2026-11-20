@@ -1,13 +1,15 @@
 import SwiftUI
 
-/// The Search tab: look up a stop by number or name without the camera — handy when a sign
-/// can't be read, and for trying the app in the Simulator. Matching stops are listed as you type,
-/// and tapping one opens its screen. Before a search, it shows the starred stops with their next buses.
+/// The Search tab: look up a stop or a route by number or name without the camera — handy when
+/// a sign can't be read, and for trying the app in the Simulator. Matching routes and stops are
+/// listed as you type, and tapping one opens its screen (a route from its start). Before a
+/// search, it shows the starred stops with their next buses.
 struct StopLookupView: View {
     @Environment(AppModel.self) private var model
     @State private var input = ""
     @State private var results: [StopSearchResult] = []
-    /// The query `results` are for (`nil` before the first search finishes).
+    @State private var routeResults: [RouteSearchResult] = []
+    /// The query `results` and `routeResults` are for (`nil` before the first search finishes).
     @State private var searchedQuery: String?
     @State private var searchError: String?
     @State private var path = NavigationPath()
@@ -18,52 +20,26 @@ struct StopLookupView: View {
     var body: some View {
         NavigationStack(path: $path) {
             ScrollView {
-                VStack(spacing: 16) {
-                    HStack {
-                        HStack(spacing: 6) {
-                            Image(systemName: "magnifyingglass")
-                                .foregroundStyle(.secondary)
-                            TextField("Stop number or name", text: $input)
-                                .textInputAutocapitalization(.never)
-                                .autocorrectionDisabled()
-                                .submitLabel(.search)
-                                .focused($isInputFocused)
-                                .onSubmit(searchNow)
-                            if !input.isEmpty {
-                                Button {
-                                    // Back to the favourites, with the keyboard down.
-                                    input = ""
-                                    isInputFocused = false
-                                } label: {
-                                    Image(systemName: "xmark.circle.fill")
-                                        .foregroundStyle(.secondary)
-                                }
-                                .buttonStyle(.plain)
-                                .accessibilityLabel("Clear")
-                            }
-                        }
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 8)
-                        .background(Color.appCard, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-
-                        // Only while typing; the keyboard's own search key does the same.
-                        if isInputFocused {
-                            Button("Search", action: searchNow)
-                                .buttonStyle(.borderedProminent)
-                                .tint(TFIColors.green)
-                                .disabled(query.isEmpty)
-                                .transition(.move(edge: .trailing).combined(with: .opacity))
-                        }
-                    }
-                    .animation(.default, value: isInputFocused)
+                VStack(spacing: 0) {
                     content
                 }
-                .padding()
+                // Full width, also when it only holds a spinner or a message.
+                .frame(maxWidth: .infinity)
+                .padding([.horizontal, .bottom])
             }
             .scrollDismissesKeyboard(.interactively)
-            .background(Color.appBackground)
+            .panelCardScrollView()
+            // Also under the keyboard, which has rounded corners.
+            .background { Color.appBackground.ignoresSafeArea() }
             .navigationTitle("Search")
             .navigationBarTitleDisplayMode(.inline)
+            .searchable(text: $input, placement: .navigationBarDrawer(displayMode: .always),
+                        prompt: "Stop or route, by number or name")
+            .searchFocused($isInputFocused)
+            .textInputAutocapitalization(.never)
+            .autocorrectionDisabled()
+            // The keyboard's search key searches at once (results otherwise follow the typing).
+            .onSubmit(of: .search, searchNow)
             .navigationDestination(for: FavouriteStop.self) { StopBoardScreen(stopCode: $0.code) }
             .navigationDestination(for: StopSearchResult.self) { StopBoardScreen(stopCode: $0.stop.code) }
             .routeDestinations()
@@ -71,6 +47,7 @@ struct StopLookupView: View {
         .task(id: query) {
             guard !query.isEmpty else {
                 results = []
+                routeResults = []
                 searchedQuery = nil
                 return
             }
@@ -90,27 +67,44 @@ struct StopLookupView: View {
                 .font(.footnote)
                 .foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.top, 16)
         } else if searchedQuery == nil {
             ProgressView()
                 .padding(.top, 24)
-        } else if results.isEmpty {
-            Text("No stops match “\(searchedQuery ?? query)”.")
+        } else if results.isEmpty && routeResults.isEmpty {
+            Text("No stops or routes match “\(searchedQuery ?? query)”.")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.top, 16)
         } else {
-            StopResultsCard(results: results) { result in
-                isInputFocused = false
-                path.append(result)
+            // Each section brings the space above it.
+            PanelCardStack {
+                if !routeResults.isEmpty {
+                    RouteResultsSection(results: routeResults) { result in
+                        isInputFocused = false
+                        // A route on its own, from where its trips start.
+                        path.append(LineReference(routeID: result.route.id, stopCode: nil))
+                    }
+                }
+                if !results.isEmpty {
+                    StopResultsSection(results: results) { result in
+                        isInputFocused = false
+                        path.append(result)
+                    }
+                }
             }
         }
     }
 
     private func search(_ query: String) async {
         do {
-            let found = try await model.service.searchStops(query)
+            async let stops = model.service.searchStops(query)
+            async let routes = model.service.searchRoutes(query)
+            let (foundStops, foundRoutes) = try await (stops, routes)
             guard query == self.query else { return } // the text changed meanwhile
-            results = found
+            results = foundStops
+            routeResults = foundRoutes
             searchedQuery = query
             searchError = nil
         } catch {
@@ -119,7 +113,7 @@ struct StopLookupView: View {
     }
 
     /// Searches without waiting for a pause in typing, and hides the keyboard so the results
-    /// can be seen. Opening a stop is left to the user, even when the number matches exactly.
+    /// can be seen. Opening a result is left to the user, even when the number matches exactly.
     private func searchNow() {
         let query = self.query
         guard !query.isEmpty else { return }
@@ -138,44 +132,50 @@ private struct FavouriteStopsSection: View {
     private var favourites: [FavouriteStop] { model.favourites.stops }
 
     var body: some View {
-        VStack(spacing: 16) {
+        VStack(spacing: 0) {
             if favourites.isEmpty {
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("Type a stop number, like 271, or part of a stop's name, like O'Connell.")
+                    Text("Type a stop's number or name, like 271 or O'Connell, or a route's, like 27 or Clare Hall.")
                     Label("Star a stop to see its next buses here.", systemImage: "star")
                 }
                 .font(.footnote)
                 .foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.top, 16)
             } else {
-                HStack(spacing: 6) {
-                    Label("Favourites", systemImage: "star.fill")
-                        .font(.headline)
-                    Spacer(minLength: 0)
-                }
-                if let loadError {
-                    Label(loadError, systemImage: "exclamationmark.triangle")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                } else if let updatedAt {
+                VStack(spacing: 16) {
                     HStack(spacing: 6) {
-                        RealtimeStatusLabel(issue: boards.values.first?.realtimeIssue, updatedAt: updatedAt)
+                        Label("Favourite stops", systemImage: "star.fill")
+                            .font(.headline)
                         Spacer(minLength: 0)
                     }
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
+                    if let loadError {
+                        Label(loadError, systemImage: "exclamationmark.triangle")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    } else if let updatedAt {
+                        HStack(spacing: 6) {
+                            RealtimeStatusLabel(issue: boards.values.first?.realtimeIssue, updatedAt: updatedAt)
+                            Spacer(minLength: 0)
+                        }
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                    }
                 }
-                ForEach(favourites) { favourite in
-                    let board = boards[favourite.code]
-                    StopSummaryCard(
-                        code: favourite.code,
-                        name: board?.stopName ?? favourite.name,
-                        board: board,
-                        unavailable: isKnown(favourite.code) ? nil : "This stop isn't in the current timetable.",
-                        destination: favourite
-                    )
-                    .transition(.opacity.combined(with: .scale(scale: 0.95)))
+                .padding(.top, 16)
+                // Each card brings the space above it.
+                PanelCardStack {
+                    ForEach(favourites) { favourite in
+                        let board = boards[favourite.code]
+                        StopSummaryCard(
+                            code: favourite.code,
+                            name: board?.stopName ?? favourite.name,
+                            board: board,
+                            unavailable: isKnown(favourite.code) ? nil : "This stop isn't in the current timetable.",
+                            destination: favourite
+                        )
+                    }
                 }
             }
         }
@@ -207,15 +207,71 @@ private struct FavouriteStopsSection: View {
     }
 }
 
+/// Matching routes, each with its number and destinations.
+private struct RouteResultsSection: View {
+    let results: [RouteSearchResult]
+    let select: (RouteSearchResult) -> Void
+
+    var body: some View {
+        PanelListSection(title: "Routes", systemImage: "point.topleft.down.to.point.bottomright.curvepath.fill") {
+            ForEach(Array(results.enumerated()), id: \.element.id) { index, result in
+                if index > 0 { PanelSeparator(inset: PanelMetrics.listPadding) }
+                Button { select(result) } label: {
+                    RouteResultRow(result: result)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            }
+        }
+    }
+}
+
+private struct RouteResultRow: View {
+    let result: RouteSearchResult
+    private var route: GTFSRoute { result.route }
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Text(route.shortName)
+                .font(.system(size: 17, weight: .heavy, design: .rounded))
+                .foregroundStyle(TFIColors.ink)
+                .lineLimit(1)
+                .minimumScaleFactor(0.6)
+                .frame(width: 56, height: 34)
+                .background(TFIColors.yellow, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+
+            Text(destinations)
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundStyle(Color.cardInk)
+                .lineLimit(2)
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+            Image(systemName: "chevron.right")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(Color.cardSecondaryInk.opacity(0.7))
+        }
+        .padding(.horizontal, PanelMetrics.listPadding)
+        .padding(.vertical, PanelMetrics.listRowVerticalPadding)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Route \(route.shortName), to \(result.destinations.isEmpty ? route.longName : result.destinations.formatted(.list(type: .or)))")
+    }
+
+    /// Where its trips go, the most frequent first; the route's name if that's unknown.
+    private var destinations: String {
+        if !result.destinations.isEmpty { return result.destinations.joined(separator: " · ") }
+        return route.longName.isEmpty ? "Route \(route.shortName)" : route.longName
+    }
+}
+
 /// Matching stops, each with the routes that call there.
-private struct StopResultsCard: View {
+private struct StopResultsSection: View {
     let results: [StopSearchResult]
     let select: (StopSearchResult) -> Void
 
     var body: some View {
-        VStack(spacing: 0) {
+        PanelListSection(title: "Stops", systemImage: "bus.fill") {
             ForEach(Array(results.enumerated()), id: \.element.id) { index, result in
-                if index > 0 { PanelSeparator() }
+                if index > 0 { PanelSeparator(inset: PanelMetrics.listPadding) }
                 Button { select(result) } label: {
                     StopResultRow(result: result)
                         .contentShape(Rectangle())
@@ -223,10 +279,6 @@ private struct StopResultsCard: View {
                 .buttonStyle(.plain)
             }
         }
-        .padding(.vertical, 4)
-        .background(Color.appCard)
-        .clipShape(RoundedRectangle(cornerRadius: PanelMetrics.cornerRadius, style: .continuous))
-        .shadow(color: .black.opacity(0.12), radius: 10, y: 3)
     }
 }
 
@@ -266,8 +318,8 @@ private struct StopResultRow: View {
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(Color.cardSecondaryInk.opacity(0.7))
         }
-        .padding(.horizontal, PanelMetrics.horizontalPadding)
-        .padding(.vertical, 10)
+        .padding(.horizontal, PanelMetrics.listPadding)
+        .padding(.vertical, PanelMetrics.listRowVerticalPadding)
     }
 
     private func routeBadges(_ count: Int) -> some View {

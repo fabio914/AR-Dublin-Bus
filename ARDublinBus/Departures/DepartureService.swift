@@ -20,11 +20,13 @@ struct StopBoard: Equatable, Sendable {
 enum DepartureServiceError: LocalizedError, Equatable {
     case unknownStop(String)
     case unknownTrip
+    case unknownRoute
 
     var errorDescription: String? {
         switch self {
         case .unknownStop(let code): "Stop \(code) isn't in the Dublin Bus timetable."
         case .unknownTrip: "This bus isn't in the timetable any more."
+        case .unknownRoute: "This route isn't in the timetable any more."
         }
     }
 }
@@ -110,6 +112,11 @@ actor DepartureService {
         }.value
     }
 
+    func searchRoutes(_ query: String, limit: Int = 8) async throws -> [RouteSearchResult] {
+        let timetable = try await timetableStore.loadedTimetable()
+        return timetable.searchRoutes(query, limit: limit)
+    }
+
     /// Stops within `radius` metres of `coordinate`, nearest first, with their routes: the pins
     /// shown in AR.
     func arStops(around coordinate: CLLocationCoordinate2D, radius: CLLocationDistance, limit: Int) async throws -> [ARStop] {
@@ -159,13 +166,15 @@ actor DepartureService {
                                 realtimeIssue: realtimeIssue, vehicles: await vehicles, now: now)
     }
 
-    /// A route's stops, paths and timetable from a stop, for the line screen.
+    /// A route's stops, paths and timetable from a stop (or from its start), for the line screen.
     func line(_ reference: LineReference) async throws -> LineDetails {
         let timetable = try await timetableStore.loadedTimetable()
         let details = try await Task.detached(priority: .userInitiated) {
             try timetable.lineDetails(routeID: reference.routeID, stopCode: reference.stopCode)
         }.value
-        guard let details else { throw DepartureServiceError.unknownStop(reference.stopCode) }
+        guard let details else {
+            throw reference.stopCode.map { DepartureServiceError.unknownStop($0) } ?? .unknownRoute
+        }
         return details
     }
 

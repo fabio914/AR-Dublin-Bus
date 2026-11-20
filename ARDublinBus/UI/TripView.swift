@@ -2,11 +2,37 @@ import MapKit
 import SwiftUI
 
 extension View {
-    /// Lets `NavigationLink(value: TripReference)` rows open a bus's trip, and
-    /// `NavigationLink(value: LineReference)` rows open a route's line screen.
+    /// Lets `NavigationLink(value: TripReference)` rows open a bus's trip,
+    /// `NavigationLink(value: LineReference)` rows open a route's line screen, and
+    /// `NavigationLink(value: StopReference)` rows open a stop's screen.
     func routeDestinations() -> some View {
         navigationDestination(for: TripReference.self) { TripView(reference: $0) }
             .navigationDestination(for: LineReference.self) { LineView(reference: $0) }
+            .navigationDestination(for: StopReference.self) { StopBoardScreen(stopCode: $0.code) }
+    }
+}
+
+/// A stop to open from a route's list of stops.
+struct StopReference: Hashable {
+    let code: String
+}
+
+/// A row that opens a stop's screen when tapped (inside a `NavigationStack` using
+/// `routeDestinations()`), or just the row when it's not enabled.
+struct StopLink<Label: View>: View {
+    let stopCode: String
+    var isEnabled = true
+    @ViewBuilder let label: Label
+
+    var body: some View {
+        if isEnabled {
+            NavigationLink(value: StopReference(code: stopCode)) {
+                label.contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+        } else {
+            label
+        }
     }
 }
 
@@ -22,11 +48,7 @@ struct TripView: View {
     var body: some View {
         Group {
             if let journey {
-                VStack(spacing: 0) {
-                    TripMap(journey: journey)
-                        .frame(height: 260)
-                    TripStopsList(journey: journey)
-                }
+                TripStopsList(journey: journey)
             } else if let error {
                 ContentUnavailableView("Couldn't load this bus", systemImage: "exclamationmark.triangle", description: Text(error))
             } else {
@@ -84,27 +106,34 @@ private struct TripStopsList: View {
     var body: some View {
         ScrollViewReader { proxy in
             ScrollView {
-                PanelCard(title: "To \(journey.headsign)", subtitle: subtitle, icon: "bus.fill") {
-                    if journey.isCancelled {
-                        PanelMessage(icon: "xmark.octagon.fill", title: "This bus is cancelled")
-                    }
-                    VStack(spacing: 0) {
-                        ForEach(Array(journey.stops.enumerated()), id: \.element.id) { index, stop in
-                            TripStopRow(
-                                stop: stop,
-                                isOrigin: stop.sequence == journey.reference.stopSequence,
-                                isFirst: index == 0,
-                                isLast: index == journey.stops.count - 1
-                            )
-                            .id(stop.id)
+                PanelCardStack {
+                    // The map is pinned with the header, so the stops slide under it.
+                    PanelCard(title: "To \(journey.headsign)", subtitle: subtitle, icon: "bus.fill",
+                              banner: TripMap(journey: journey).frame(height: RouteMap.height), footer: footer) {
+                        if journey.isCancelled {
+                            PanelMessage(icon: "xmark.octagon.fill", title: "This bus is cancelled")
                         }
+                        VStack(spacing: 0) {
+                            ForEach(Array(journey.stops.enumerated()), id: \.element.id) { index, stop in
+                                let isOrigin = stop.sequence == journey.reference.stopSequence
+                                // Every stop but the one the bus was picked from opens its own screen.
+                                StopLink(stopCode: stop.stop.code, isEnabled: !isOrigin) {
+                                    TripStopRow(
+                                        stop: stop,
+                                        isOrigin: isOrigin,
+                                        isFirst: index == 0,
+                                        isLast: index == journey.stops.count - 1
+                                    )
+                                }
+                                .id(stop.id)
+                            }
+                        }
+                        .padding(.vertical, 6)
                     }
-                    .padding(.vertical, 6)
-                    PanelFooter { RealtimeStatusLabel(issue: journey.realtimeIssue, updatedAt: journey.updatedAt) }
                 }
-                .shadow(color: .black.opacity(0.12), radius: 10, y: 3)
-                .padding(16)
+                .padding([.horizontal, .bottom], 16)
             }
+            .panelCardScrollView()
             .onAppear {
                 if let origin = journey.origin {
                     proxy.scrollTo(origin.id, anchor: .center)
@@ -116,6 +145,9 @@ private struct TripStopsList: View {
     private var subtitle: String {
         let count = journey.stops.count
         return "Route \(journey.route.shortName) · \(count) stop\(count == 1 ? "" : "s")"
+    }
+    private var footer: PanelFooter<RealtimeStatusLabel> {
+        PanelFooter { RealtimeStatusLabel(issue: journey.realtimeIssue, updatedAt: journey.updatedAt) }
     }
 }
 

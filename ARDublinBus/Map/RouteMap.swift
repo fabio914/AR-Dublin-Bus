@@ -19,6 +19,9 @@ struct RouteMap: View {
     /// The camera goes back to the whole route when this changes (e.g. another direction).
     let routeKey: String
     @State private var position: MapCameraPosition
+
+    /// The height the trip and line screens show it at.
+    static let height: CGFloat = 200
     /// So the buses' direction arrows stay right when the map is rotated.
     @State private var heading: CLLocationDirection = 0
 

@@ -34,13 +34,16 @@ struct ImageQuad: Sendable {
     }
 }
 
-/// A "Stop 1234" label found anywhere in a camera frame by `StopNumberReader.findStopLabels`.
+/// A stop number label found anywhere in a camera frame by `StopNumberReader.findStopLabels`.
 struct StopLabel: Sendable {
     let number: String
-    /// The label as recognised, such as "Stop 350".
+    /// The text `quad` boxes, as recognised: "Stop 350" on a flag, the number line alone ("2383")
+    /// on a round sign.
     let text: String
-    /// The label's corners in the buffer's pixels (top-left origin), named as the text reads.
+    /// The text's corners in the buffer's pixels (top-left origin), named as the text reads.
     let quad: ImageQuad
+    /// The kind of sign, told from how the label is laid out.
+    let kind: SignKind
 }
 
 /// Reads text from a region of a camera frame: the region is first rectified
@@ -87,7 +90,9 @@ final class StopNumberReader: @unchecked Sendable {
         }
     }
 
-    /// Finds "Stop 1234" labels anywhere in `pixelBuffer`, without knowing where the sign is.
+    /// Finds stop number labels anywhere in `pixelBuffer`, without knowing where the sign is:
+    /// "Stop 1234" on one line (the TFI flag), or a "Stop"/"STOP NO." line with the number on its
+    /// own line just below it (the round signs).
     ///
     /// - Parameter orientation: how the buffer is turned relative to upright, so Vision can read
     ///   the text (ARKit's camera image is `.right` while the phone is held upright).
@@ -99,20 +104,55 @@ final class StopNumberReader: @unchecked Sendable {
         try VNImageRequestHandler(cvPixelBuffer: pixelBuffer, orientation: orientation).perform([request])
 
         let size = CGSize(width: CVPixelBufferGetWidth(pixelBuffer), height: CVPixelBufferGetHeight(pixelBuffer))
-        return (request.results ?? []).compactMap { observation in
-            for candidate in observation.topCandidates(3) {
+        func quad(_ box: VNRectangleObservation) -> ImageQuad {
+            let point = { Self.bufferPoint(fromNormalized: $0, orientation: orientation, bufferSize: size) }
+            return ImageQuad(topLeft: point(box.topLeft), topRight: point(box.topRight),
+                             bottomRight: point(box.bottomRight), bottomLeft: point(box.bottomLeft))
+        }
+
+        let observations = request.results ?? []
+        var labels: [StopLabel] = []
+        var keywords: [(line: StopNumberParser.KeywordLine, box: CGRect)] = []
+        var numbers: [(number: String, text: String, box: CGRect, quad: ImageQuad)] = []
+
+        observations: for observation in observations {
+            let candidates = observation.topCandidates(3)
+            for candidate in candidates {
                 guard let label = StopNumberParser.label(in: candidate.string),
                       let box = try? candidate.boundingBox(for: label.range) else { continue }
-                let point = { Self.bufferPoint(fromNormalized: $0, orientation: orientation, bufferSize: size) }
-                return StopLabel(
-                    number: label.number,
-                    text: String(candidate.string[label.range]),
-                    quad: ImageQuad(topLeft: point(box.topLeft), topRight: point(box.topRight),
-                                    bottomRight: point(box.bottomRight), bottomLeft: point(box.bottomLeft))
-                )
+                labels.append(StopLabel(number: label.number, text: String(candidate.string[label.range]),
+                                        quad: quad(box), kind: .flag))
+                continue observations
             }
-            return nil
+            if let line = candidates.lazy.compactMap({ StopNumberParser.keywordLine($0.string) }).first {
+                keywords.append((line, observation.boundingBox))
+            } else if let (number, text) = candidates.lazy.compactMap({ candidate in
+                          StopNumberParser.numberLine(candidate.string).map { ($0, candidate.string) }
+                      }).first {
+                numbers.append((number, text.trimmingCharacters(in: .whitespaces), observation.boundingBox, quad(observation)))
+            }
         }
+
+        // Round signs: the number line just below the keyword line, centred under it.
+        for keyword in keywords {
+            let match = numbers
+                .filter { Self.isNumberLine($0.box, below: keyword.box) }
+                .min { abs($0.box.midY - keyword.box.midY) < abs($1.box.midY - keyword.box.midY) }
+            guard let match else { continue }
+            labels.append(StopLabel(number: match.number, text: match.text, quad: match.quad,
+                                    kind: keyword.line == .stopNumber ? .yellowDisc : .greenDisc))
+        }
+        return labels
+    }
+
+    /// Whether a line boxed `number` sits right under the line boxed `keyword` (Vision's
+    /// normalised, upright coordinates, origin bottom-left). On the photos the number line's
+    /// centre is 0.7–0.8 of the keyword line's height below the keyword's, centred under it.
+    static func isNumberLine(_ number: CGRect, below keyword: CGRect) -> Bool {
+        let drop = keyword.midY - number.midY
+        let offset = abs(number.midX - keyword.midX)
+        return drop > keyword.height * 0.4 && drop < keyword.height * 1.8
+            && offset < max(number.width, keyword.width) * 0.5
     }
 
     /// Converts a point from Vision's normalised coordinates (of the upright image, bottom-left

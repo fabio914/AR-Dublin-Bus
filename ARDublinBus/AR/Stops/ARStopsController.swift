@@ -26,12 +26,41 @@ struct ARStopsStatus: Equatable, Sendable {
     var isCorrectedBySign = false
 }
 
-/// Shows the stops around the user as floating labels in the AR view.
+/// Which nearby stop's card is unfolded: the nearest within `unfoldDistance`, kept until it's
+/// further than `foldDistance`, so it doesn't flicker at the edge.
+enum NearbyUnfolding {
+    static let unfoldDistance: Float = 5
+    static let foldDistance: Float = 8
+
+    /// - Parameters:
+    ///   - current: the stop unfolded now.
+    ///   - distances: each stop that may unfold, and how far it is (horizontally), in metres.
+    static func stop<ID: Hashable>(current: ID?, distances: [ID: Float]) -> ID? {
+        if let current, let distance = distances[current], distance <= foldDistance { return current }
+        return distances.filter { $0.value <= unfoldDistance }.min { $0.value < $1.value }?.key
+    }
+}
+
+/// A stop's pin, handed over to a recognised sign's card.
+struct PinHandoff {
+    let stop: ARStop
+    /// The pin's card in world space, where the sign's card starts from.
+    let cardTransform: simd_float4x4
+    /// How far the pin had unfolded (0 folded … 1 unfolded).
+    let progress: Float
+    let header: StopCardEntity.Header?
+}
+
+/// Shows the stops around the user as pins in the AR view.
 ///
 /// Stops within `radius` are fetched from the timetable (R-tree) whenever the user has moved
 /// `requeryDistance`. Each one is placed either:
 /// - with an `ARGeoAnchor`, when the session uses geo tracking and has localised; or
 /// - from GPS and the compass (`GeoAlignment`), in any session aligned with gravity and heading.
+///
+/// Walking up to a stop unfolds its pin into the departures board (`NearbyUnfolding`). When a sign
+/// is recognised, its stop's pin is handed over to the sign's card (`handOff(stopCode:)`) until
+/// the card folds back into it (`takeBack(stopCode:)`).
 @MainActor
 final class ARStopsController: NSObject, CLLocationManagerDelegate {
     static let radius: CLLocationDistance = 400
@@ -78,8 +107,13 @@ final class ARStopsController: NSObject, CLLocationManagerDelegate {
     private var geoState: ARGeoTrackingStatus.State = .notAvailable
     private var hasCheckedGeoAvailability = false
     private var isEnabled = false
-    /// The stop whose sign is being tracked: its board is already showing, so no pin.
-    private var recognisedStopCode: String?
+    /// The stop whose pin has been handed over to a sign's card: it's hidden.
+    private var handedOffStopCode: String?
+    /// The pin unfolded because the user is next to its stop.
+    private var unfoldedPinID: String?
+    /// The latest departures board, shown on the unfolded pin when it's for its stop.
+    private var latestContent: PanelContent?
+    private var lastFrameTime: TimeInterval?
     private var status = ARStopsStatus() {
         didSet { if status != oldValue { onStatusChange?(status) } }
     }
@@ -87,6 +121,14 @@ final class ARStopsController: NSObject, CLLocationManagerDelegate {
     var onStatusChange: ((ARStopsStatus) -> Void)?
     /// Geo tracking is available here: the owner should restart the session with it.
     var onGeoTrackingAvailable: (() -> Void)?
+    /// A pin unfolded next to its stop: its departures are needed.
+    var onUnfold: ((_ stopCode: String) -> Void)?
+    /// The unfolded pin folded again.
+    var onFold: ((_ stopCode: String) -> Void)?
+    /// The stop of the sign being tracked: its card unfolds by the sign instead.
+    var reservedStopCode: String?
+    /// No pin unfolds while a sign's card is open.
+    var suppressesUnfolding = false
 
     init(arView: ARView, service: DepartureService) {
         self.arView = arView
@@ -144,8 +186,6 @@ final class ARStopsController: NSObject, CLLocationManagerDelegate {
 
     /// A sign was recognised: it pins down where that stop is in AR space.
     func signRecognised(stopCode: String, at position: SIMD3<Float>) {
-        recognisedStopCode = stopCode
-        pins.values.forEach { $0.entity.isEnabled = $0.stop.stop.code != stopCode }
         guard let coordinate = pins.values.first(where: { $0.stop.stop.code == stopCode })?.stop.stop.coordinate else {
             // Not among the pins (yet): look the stop up.
             Task {
@@ -158,9 +198,48 @@ final class ARStopsController: NSObject, CLLocationManagerDelegate {
         applySign(at: position, coordinate: coordinate)
     }
 
-    func signLost() {
-        recognisedStopCode = nil
+    /// The sign is gone: every pin shows again.
+    func releaseSign() {
+        handedOffStopCode = nil
+        reservedStopCode = nil
+        suppressesUnfolding = false
         pins.values.forEach { $0.entity.isEnabled = true }
+    }
+
+    /// Hides the stop's pin and returns where its card is, for the sign's card to take over from.
+    func handOff(stopCode: String) -> PinHandoff? {
+        handedOffStopCode = stopCode
+        guard let pin = pin(forStopCode: stopCode) else { return nil }
+        let handoff = PinHandoff(stop: pin.stop, cardTransform: pin.entity.card.transformMatrix(relativeTo: nil),
+                                 progress: pin.entity.card.progress, header: pin.entity.card.header)
+        // The sign's card shows this stop's board from now on.
+        if unfoldedPinID == pin.stop.id { unfoldedPinID = nil }
+        pin.entity.fold()
+        pin.entity.isEnabled = false
+        return handoff
+    }
+
+    /// Where the stop's (hidden) pin card is in world space, for folding the sign's card back into it.
+    func cardTransform(stopCode: String) -> simd_float4x4? {
+        guard let pin = pin(forStopCode: stopCode), pin.entity.parent != nil else { return nil }
+        return pin.entity.card.transformMatrix(relativeTo: nil)
+    }
+
+    /// The sign's card folded back into the stop's pin: show the pin again.
+    func takeBack(stopCode: String) {
+        if handedOffStopCode == stopCode { handedOffStopCode = nil }
+        pin(forStopCode: stopCode)?.entity.isEnabled = true
+    }
+
+    /// The latest board: shown on the unfolded pin if it's for its stop.
+    func showContent(_ content: PanelContent) {
+        latestContent = content
+        guard let id = unfoldedPinID, let pin = pins[id], content.stopCode == pin.stop.stop.code else { return }
+        pin.entity.showContent(content)
+    }
+
+    private func pin(forStopCode code: String) -> Pin? {
+        pins.values.first { $0.stop.stop.code == code }
     }
 
     private func applySign(at position: SIMD3<Float>, coordinate: CLLocationCoordinate2D) {
@@ -181,19 +260,40 @@ final class ARStopsController: NSObject, CLLocationManagerDelegate {
 
     // MARK: Frames
 
-    /// Called for every camera frame: glides compass pins to their targets, sizes and turns labels.
+    /// Called for every camera frame: glides compass pins to their targets, unfolds the pin of a
+    /// stop the user is next to, and sizes and turns the cards.
     func update(frame: ARFrame) {
+        let deltaTime = Float(min(frame.timestamp - (lastFrameTime ?? frame.timestamp), 0.1))
+        lastFrameTime = frame.timestamp
         guard isEnabled, !pins.isEmpty else { return }
         let camera = frame.camera.transform.translation
+        var distances: [String: Float] = [:]
         for pin in pins.values {
             if placement == .compass, let target = pin.target {
                 let current = pin.entity.position
                 pin.entity.position = simd_distance(current, target) > 30 ? target : current + (target - current) * 0.1
             }
-            pin.entity.layout(cameraPosition: camera)
             let distance = simd_distance(pin.entity.position(relativeTo: nil) * SIMD3(1, 0, 1), camera * SIMD3(1, 0, 1))
             pin.entity.update(distance: Double(distance))
+            if pin.entity.isEnabled, pin.stop.stop.code != reservedStopCode { distances[pin.stop.id] = distance }
         }
+        setUnfoldedPin(suppressesUnfolding ? nil : NearbyUnfolding.stop(current: unfoldedPinID, distances: distances))
+        for pin in pins.values {
+            pin.entity.layout(cameraPosition: camera, deltaTime: deltaTime)
+        }
+    }
+
+    private func setUnfoldedPin(_ id: String?) {
+        guard id != unfoldedPinID else { return }
+        if let old = unfoldedPinID.flatMap({ pins[$0] }) {
+            old.entity.setUnfolded(false)
+            onFold?(old.stop.stop.code)
+        }
+        unfoldedPinID = id
+        guard let pin = id.flatMap({ pins[$0] }) else { return }
+        if let latestContent, latestContent.stopCode == pin.stop.stop.code { pin.entity.showContent(latestContent) }
+        pin.entity.setUnfolded(true)
+        onUnfold?(pin.stop.stop.code)
     }
 
     // MARK: Location
@@ -255,13 +355,14 @@ final class ARStopsController: NSObject, CLLocationManagerDelegate {
 
     private func show(_ stops: [ARStop]) {
         let wanted = Set(stops.map(\.id))
+        if let id = unfoldedPinID, !wanted.contains(id) { setUnfoldedPin(nil) }
         for (id, pin) in pins where !wanted.contains(id) {
             remove(pin)
             pins[id] = nil
         }
         for stop in stops where pins[stop.id] == nil {
             let pin = Pin(stop: stop, entity: StopPinEntity(stop: stop))
-            pin.entity.isEnabled = stop.stop.code != recognisedStopCode
+            pin.entity.isEnabled = stop.stop.code != handedOffStopCode
             pins[stop.id] = pin
             place(pin)
         }
@@ -304,6 +405,7 @@ final class ARStopsController: NSObject, CLLocationManagerDelegate {
     }
 
     private func removeAllPins() {
+        setUnfoldedPin(nil)
         pins.values.forEach(remove)
         pins.removeAll()
         compassRoot?.removeFromParent()

@@ -23,14 +23,15 @@ struct LineView: View {
     var body: some View {
         Group {
             if let details, let direction = direction(in: details) {
-                VStack(spacing: 0) {
-                    map(details: details, direction: direction)
-                        .frame(height: 260)
-                    content(details: details, direction: direction)
-                }
+                content(details: details, direction: direction)
             } else if details != nil {
-                ContentUnavailableView("No buses leave from here", systemImage: "moon.zzz.fill",
-                                       description: Text("This route doesn't pick up passengers at stop \(reference.stopCode)."))
+                if let stopCode = reference.stopCode {
+                    ContentUnavailableView("No buses leave from here", systemImage: "moon.zzz.fill",
+                                           description: Text("This route doesn't pick up passengers at stop \(stopCode)."))
+                } else {
+                    ContentUnavailableView("No buses on this route", systemImage: "moon.zzz.fill",
+                                           description: Text("The timetable has no trips for this route."))
+                }
             } else if let error {
                 ContentUnavailableView("Couldn't load this route", systemImage: "exclamationmark.triangle", description: Text(error))
             } else {
@@ -41,6 +42,19 @@ struct LineView: View {
         .background(Color.appBackground)
         .navigationTitle(details.map { "Route \($0.route.shortName)" } ?? "Route")
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            // In place of the title, from the start (so the title doesn't show first); the route
+            // is in the cards' subtitles. Not when there's nothing to show.
+            if error == nil, details?.directions.isEmpty != true {
+                ToolbarItem(placement: .principal) {
+                    Picker("Show", selection: $section) {
+                        ForEach(Section.allCases) { Text($0.rawValue).tag($0) }
+                    }
+                    .pickerStyle(.segmented)
+                    .fixedSize()
+                }
+            }
+        }
         .task(id: reference) {
             do {
                 details = try await model.service.line(reference)
@@ -63,11 +77,12 @@ struct LineView: View {
         details.directions.first { $0.id == directionID } ?? details.directions.first
     }
 
+    /// Pinned with the header of the stops card, so the stops slide under it.
     private func map(details: LineDetails, direction: LineDirection) -> some View {
         RouteMap(
             path: direction.shape,
             stops: direction.stops.map { RouteMap.Stop(id: $0.sequence, stop: $0.stop) },
-            highlighted: direction.stops[direction.stopIndex].stop,
+            highlighted: details.stop == nil ? nil : direction.stops[direction.stopIndex].stop,
             vehicles: vehicles ?? [],
             routeKey: direction.id
         )
@@ -80,95 +95,100 @@ struct LineView: View {
                 )
             }
         }
+        .frame(height: RouteMap.height)
+    }
+
+    /// Picks where the route goes (e.g. the 27 to Clare Hall, or to Eden Quay, which ends
+    /// sooner), from a button on the cards' header, when it has more than one destination.
+    private func towards(_ details: LineDetails, selected: LineDirection) -> PanelHeader.OptionsMenu? {
+        guard details.directions.count > 1 else { return nil }
+        return PanelHeader.OptionsMenu(
+            label: "Destination",
+            // The route splitting towards its destinations.
+            systemImage: "arrow.trianglehead.branch",
+            options: details.directions.map { .init(id: $0.id, title: "To \($0.headsign)") },
+            selectedID: selected.id,
+            select: { directionID = $0 }
+        )
     }
 
     private func content(details: LineDetails, direction: LineDirection) -> some View {
-        VStack(spacing: 0) {
-            // Kept in view while the list scrolls to the user's stop.
-            VStack(spacing: 10) {
-                if details.directions.count > 1 {
-                    directionPicker(details.directions, selected: direction)
-                }
-                Picker("Show", selection: $section) {
-                    ForEach(Section.allCases) { Text($0.rawValue).tag($0) }
-                }
-                .pickerStyle(.segmented)
-            }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 10)
-
-            ScrollViewReader { proxy in
-                ScrollView {
-                    switch section {
-                    case .timetable:
-                        LineTimetableCard(details: details, direction: direction)
-                            .padding([.horizontal, .bottom], 16)
-                    case .stops:
-                        LineStopsCard(route: details.route, direction: direction)
-                            .padding([.horizontal, .bottom], 16)
+        ScrollViewReader { proxy in
+            ScrollView {
+                TimelineView(.periodic(from: .now, by: 30)) { context in
+                    PanelCardStack {
+                        switch section {
+                        case .timetable:
+                            LineTimetableCard(details: details, direction: direction, towards: towards(details, selected: direction),
+                                              now: context.date)
+                        case .stops:
+                            LineStopsCard(route: details.route, direction: direction, isFromStop: details.stop != nil,
+                                          towards: towards(details, selected: direction),
+                                          map: map(details: details, direction: direction))
+                        }
                     }
+                    .padding([.horizontal, .bottom], 16)
                 }
-                .onAppear { scrollToStop(proxy, direction: direction) }
-                .onChange(of: section) { scrollToStop(proxy, direction: direction) }
-                .onChange(of: direction.id) { scrollToStop(proxy, direction: direction) }
             }
+            .panelCardScrollView()
+            .onAppear { scrollToStop(proxy, details: details, direction: direction) }
+            // A scroll view of its own for each list (which scrolls to the stop as it appears),
+            // so switching lists doesn't keep an offset past the end of a shorter one, where the
+            // lazy stack shows nothing.
+            .id("\(section.id)-\(direction.id)")
         }
     }
 
-    private func scrollToStop(_ proxy: ScrollViewProxy, direction: LineDirection) {
-        guard section == .stops else { return }
+    private func scrollToStop(_ proxy: ScrollViewProxy, details: LineDetails, direction: LineDirection) {
+        // From the start of the route, the list starts at the top.
+        guard section == .stops, details.stop != nil else { return }
         // After the list is laid out.
         Task { @MainActor in
             proxy.scrollTo(direction.stops[direction.stopIndex].id, anchor: .center)
         }
-    }
-
-    private func directionPicker(_ directions: [LineDirection], selected: LineDirection) -> some View {
-        HStack {
-            Text("Towards")
-                .font(.system(size: 15, weight: .medium))
-                .foregroundStyle(Color.cardSecondaryInk)
-            Spacer(minLength: 8)
-            Picker("Towards", selection: Binding(get: { selected.id }, set: { directionID = $0 })) {
-                ForEach(directions) { Text($0.headsign).tag($0.id) }
-            }
-            .pickerStyle(.menu)
-            .tint(Color.appTint)
-        }
-        .padding(.leading, PanelMetrics.horizontalPadding)
-        .padding(.trailing, 4)
-        .padding(.vertical, 4)
-        .background(Color.appCard, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
     }
 }
 
 // MARK: - Stops
 
 /// Every stop of a typical trip as a timeline, with the time it takes to get there.
-private struct LineStopsCard: View {
+private struct LineStopsCard<Map: View>: View {
     let route: GTFSRoute
     let direction: LineDirection
+    /// Seen from the user's stop (highlighted), rather than from the start of the route.
+    let isFromStop: Bool
+    /// Picks the destination from a button on the card's header.
+    let towards: PanelHeader.OptionsMenu?
+    /// Shown under the card's title, pinned with it.
+    let map: Map
 
     var body: some View {
-        PanelCard(title: "To \(direction.headsign)", subtitle: subtitle, icon: "point.topleft.down.to.point.bottomright.curvepath.fill") {
+        PanelCard(title: "To \(direction.headsign)", subtitle: subtitle, icon: "point.topleft.down.to.point.bottomright.curvepath.fill",
+                  optionsMenu: towards, banner: map, footer: footer) {
             VStack(spacing: 0) {
                 ForEach(Array(direction.stops.enumerated()), id: \.element.id) { index, stop in
-                    LineStopRow(
-                        stop: stop,
-                        position: index < direction.stopIndex ? .before : index == direction.stopIndex ? .here : .after,
-                        isFirst: index == 0,
-                        isLast: index == direction.stops.count - 1
-                    )
+                    let isUsersStop = isFromStop && index == direction.stopIndex
+                    // Every stop but the user's opens its own screen.
+                    StopLink(stopCode: stop.stop.code, isEnabled: !isUsersStop) {
+                        LineStopRow(
+                            stop: stop,
+                            position: index < direction.stopIndex ? .before : isUsersStop ? .here : .after,
+                            isFirst: index == 0,
+                            isLast: index == direction.stops.count - 1
+                        )
+                    }
                     .id(stop.id)
                 }
             }
             .padding(.vertical, 6)
-            PanelFooter {
-                Image(systemName: "clock")
-                Text("Typical journey times from your stop")
-            }
         }
-        .shadow(color: .black.opacity(0.12), radius: 10, y: 3)
+    }
+
+    private var footer: PanelFooter<TupleView<(Image, Text)>> {
+        PanelFooter {
+            Image(systemName: "clock")
+            Text(isFromStop ? "Typical journey times from your stop" : "Typical journey times from the start")
+        }
     }
 
     private var subtitle: String {
@@ -213,6 +233,9 @@ private struct LineStopRow: View {
             Text("Your stop")
                 .font(.system(size: 13, weight: .bold))
                 .foregroundStyle(Color.cardInk)
+        case .after where isFirst && stop.offset == 0:
+            // The start of the route, which the times are from.
+            EmptyView()
         case .after:
             Text("\(max(0, Int((Double(stop.offset) / 60).rounded()))) min")
                 .font(.system(size: 15, weight: .semibold, design: .rounded))
@@ -230,39 +253,49 @@ private struct LineStopRow: View {
 private struct LineTimetableCard: View {
     let details: LineDetails
     let direction: LineDirection
+    /// Picks the destination from a button on the card's header.
+    let towards: PanelHeader.OptionsMenu?
+    let now: Date
     @State private var dayOffset = 0
 
     static let days = 7
 
     var body: some View {
-        TimelineView(.periodic(from: .now, by: 30)) { context in
-            let today = GTFSDate(date: context.date)
-            let date = today.adding(days: dayOffset)
-            let departures = direction.timetable(on: date, services: details.services)
-            let next = dayOffset == 0 ? departures.first { $0.time >= context.date } : nil
+        let today = GTFSDate(date: now)
+        let date = today.adding(days: dayOffset)
+        let departures = direction.timetable(on: date, services: details.services)
+        let next = dayOffset == 0 ? departures.first { $0.time >= now } : nil
 
-            PanelCard(title: "Timetable", subtitle: "From stop \(details.stop.code) · \(dayName(date, today: today))", icon: "calendar") {
-                dayPicker(today: today)
-                    .padding(.vertical, 10)
-                PanelSeparator()
-                if departures.isEmpty {
-                    PanelMessage(icon: "moon.zzz.fill", title: "No buses to \(direction.headsign) on this day")
-                } else {
-                    VStack(spacing: 0) {
-                        ForEach(Array(hours(departures).enumerated()), id: \.offset) { index, hour in
-                            if index > 0 { PanelSeparator() }
-                            HourRow(hour: hour.hour, departures: hour.departures, now: dayOffset == 0 ? context.date : nil, next: next)
-                        }
+        PanelCard(title: "To \(direction.headsign)",
+                  subtitle: "Route \(details.route.shortName) · \(from) · \(dayName(date, today: today))",
+                  icon: "calendar", optionsMenu: towards, footer: footer) {
+            dayPicker(today: today)
+                .padding(.vertical, 10)
+            PanelSeparator()
+            if departures.isEmpty {
+                PanelMessage(icon: "moon.zzz.fill", title: "No buses to \(direction.headsign) on this day")
+            } else {
+                VStack(spacing: 0) {
+                    ForEach(Array(hours(departures).enumerated()), id: \.offset) { index, hour in
+                        if index > 0 { PanelSeparator() }
+                        HourRow(hour: hour.hour, departures: hour.departures, now: dayOffset == 0 ? now : nil, next: next)
                     }
-                    .padding(.vertical, 4)
                 }
-                PanelFooter {
-                    Image(systemName: "hand.tap")
-                    Text("Tap a time to follow that bus")
-                }
+                .padding(.vertical, 4)
             }
-            .shadow(color: .black.opacity(0.12), radius: 10, y: 3)
         }
+    }
+
+    private var footer: PanelFooter<TupleView<(Image, Text)>> {
+        PanelFooter {
+            Image(systemName: "hand.tap")
+            Text("Tap a time to follow that bus")
+        }
+    }
+
+    /// Where the times are at: the user's stop, or where the route starts.
+    private var from: String {
+        details.stop.map { "Stop \($0.code)" } ?? "From \(direction.stops[direction.stopIndex].stop.name)"
     }
 
     private func dayPicker(today: GTFSDate) -> some View {

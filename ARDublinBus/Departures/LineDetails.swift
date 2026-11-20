@@ -1,17 +1,18 @@
 import CoreLocation
 import Foundation
 
-/// A route as seen from one stop: what the line screen shows.
+/// A route as seen from one stop, or from its start: what the line screen shows.
 struct LineReference: Hashable, Sendable {
     let routeID: String
-    let stopCode: String
+    /// `nil` for the whole route, from where each of its trips starts (e.g. opened from Search).
+    let stopCode: String?
 }
 
-/// A route's stops, path and timetable from one stop, from the static timetable.
+/// A route's stops, path and timetable from one stop (or from its start), from the static timetable.
 struct LineDetails: Sendable {
     let route: GTFSRoute
-    /// The stop the line is seen from.
-    let stop: GTFSStop
+    /// The stop the line is seen from; `nil` when it's seen from the start of each trip.
+    let stop: GTFSStop?
     /// One per destination leaving the stop, the most frequent first.
     let directions: [LineDirection]
     /// Which days each trip runs.
@@ -23,14 +24,14 @@ struct LineDirection: Identifiable, Sendable {
     struct Stop: Identifiable, Sendable {
         let stop: GTFSStop
         let sequence: Int
-        /// Seconds from the stop the line is seen from to this one, on a typical trip
+        /// Seconds from the stop the line is seen from (or the start) to this one, on a typical trip
         /// (negative for the stops before it).
         let offset: Int
 
         var id: Int { sequence }
     }
 
-    /// One scheduled call at the stop the line is seen from.
+    /// One scheduled call at the stop the line is seen from (or the trip's first stop).
     struct Departure: Sendable {
         let tripID: String
         let serviceID: String
@@ -43,7 +44,7 @@ struct LineDirection: Identifiable, Sendable {
     let headsign: String
     /// Every stop of a typical trip, from the start of the route.
     let stops: [Stop]
-    /// Where in `stops` the stop the line is seen from is.
+    /// Where in `stops` the stop the line is seen from is (0 when seen from the start).
     let stopIndex: Int
     /// The typical trip's path. Falls back to the stops' positions when the feed has no shape.
     let shape: [CLLocationCoordinate2D]

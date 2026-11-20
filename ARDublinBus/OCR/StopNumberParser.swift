@@ -38,6 +38,29 @@ enum StopNumberParser {
         return (number, match.range)
     }
 
+    /// A line that is only the "Stop" keyword, on signs that print the number on the next line.
+    enum KeywordLine: Equatable {
+        /// "Stop" (or "Stad").
+        case stop
+        /// "STOP NO." (or "Stop Number").
+        case stopNumber
+    }
+
+    static func keywordLine(_ text: String) -> KeywordLine? {
+        let pattern = /(?i)^\W*(?:st[o0]p|stad)\s*(no\.?|number)?\s*[:#.]?\s*$/
+        guard let match = text.firstMatch(of: pattern) else { return nil }
+        return match.1 == nil ? .stop : .stopNumber
+    }
+
+    /// The stop number on a line of its own, such as "2383", or `nil`.
+    static func numberLine(_ text: String) -> String? {
+        let token = text.trimmingCharacters(in: .whitespacesAndNewlines.union(.punctuationCharacters))
+        // Mostly real digits, as for a "Stop 1234" label, so words aren't turned into numbers.
+        let digits = token.filter(\.isNumber).count
+        guard digits * 2 > token.count, token.allSatisfy({ $0.isNumber || "OoIlSB".contains($0) }) else { return nil }
+        return normalize(token)
+    }
+
     private static func standaloneNumbers(in text: String) -> [String] {
         text.split(whereSeparator: { !$0.isLetter && !$0.isNumber })
             .compactMap { token -> String? in
