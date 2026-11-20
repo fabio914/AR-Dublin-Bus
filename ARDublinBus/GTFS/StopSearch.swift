@@ -124,3 +124,42 @@ struct StopSearchIndex: Sendable {
             .map(String.init)
     }
 }
+
+/// Finds routes by number or by name, as the user types.
+///
+/// A single word matches route numbers by prefix ("27" finds 27, 27A, 27B…; "c" finds C1, C2…).
+/// Otherwise every word must match the start of a word of the route's name ("clare" finds
+/// "Jobstown - Clare Hall"), or the route's number ("27 clare").
+enum RouteSearch {
+    static func search(_ query: String, in routes: some Sequence<GTFSRoute>, limit: Int) -> [GTFSRoute] {
+        let tokens = StopSearchIndex.words(in: query)
+        guard !tokens.isEmpty else { return [] }
+
+        var matches: [(route: GTFSRoute, rank: Int)] = []
+        for route in routes {
+            let number = StopSearchIndex.words(in: route.shortName).joined()
+            let words = StopSearchIndex.words(in: route.longName)
+            let rank: Int
+            if tokens == [number] {
+                rank = 0
+            } else if tokens.count == 1, number.hasPrefix(tokens[0]) {
+                rank = 1
+            } else if tokens.allSatisfy({ token in token == number || words.contains { $0.hasPrefix(token) } }) {
+                rank = 2
+            } else {
+                continue
+            }
+            matches.append((route, rank))
+        }
+
+        return matches
+            .sorted { lhs, rhs in
+                if lhs.rank != rhs.rank { return lhs.rank < rhs.rank }
+                let order = lhs.route.shortName.localizedStandardCompare(rhs.route.shortName)
+                if order != .orderedSame { return order == .orderedAscending }
+                return lhs.route.longName < rhs.route.longName
+            }
+            .prefix(limit)
+            .map(\.route)
+    }
+}

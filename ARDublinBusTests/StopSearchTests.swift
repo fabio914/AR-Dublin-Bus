@@ -83,3 +83,44 @@ struct StopSearchTests {
         #expect(results.first { $0.stop.code == "271" }?.routes.contains("11") == true)
     }
 }
+
+struct RouteSearchTests {
+    let routes = [
+        GTFSRoute(id: "r27", shortName: "27", longName: "Jobstown - Clare Hall"),
+        GTFSRoute(id: "r27a", shortName: "27A", longName: "Blunden Drive - Eden Quay"),
+        GTFSRoute(id: "r27x", shortName: "27X", longName: "Clare Hall - UCD Belfield"),
+        GTFSRoute(id: "r7", shortName: "7", longName: "Brides Glen - Mountjoy Sq"),
+        GTFSRoute(id: "rc1", shortName: "C1", longName: "Adamstown Stn - Sandymount"),
+        GTFSRoute(id: "r11", shortName: "11", longName: "Wadelai Park - Sandyford"),
+    ]
+
+    private func numbers(_ query: String) -> [String] {
+        RouteSearch.search(query, in: routes, limit: 10).map(\.shortName)
+    }
+
+    @Test func numbersMatchByPrefixExactFirst() {
+        #expect(numbers("27") == ["27", "27A", "27X"])
+        #expect(numbers("27a") == ["27A"])
+        #expect(numbers("7") == ["7"])
+        #expect(numbers("99").isEmpty)
+    }
+
+    @Test func namesMatchWordStarts() {
+        #expect(numbers("clare hall") == ["27", "27X"])
+        #expect(numbers("Sandy") == ["11", "C1"])
+        #expect(numbers("eden quay") == ["27A"])
+        #expect(numbers("hall clare") == ["27", "27X"]) // in any order
+        #expect(numbers("lare").isEmpty) // only the starts of words
+    }
+
+    @Test func numberAndNameTogether() {
+        #expect(numbers("27 clare") == ["27"])
+        // A letter is the start of route numbers (C1) before it's the start of names.
+        #expect(numbers("c").first == "C1")
+    }
+
+    @Test func emptyQueryFindsNothing() {
+        #expect(numbers("").isEmpty)
+        #expect(numbers(" - ").isEmpty)
+    }
+}

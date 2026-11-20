@@ -1,13 +1,15 @@
 import SwiftUI
 
-/// The Search tab: look up a stop by number or name without the camera — handy when a sign
-/// can't be read, and for trying the app in the Simulator. Matching stops are listed as you type,
-/// and tapping one opens its screen. Before a search, it shows the starred stops with their next buses.
+/// The Search tab: look up a stop or a route by number or name without the camera — handy when
+/// a sign can't be read, and for trying the app in the Simulator. Matching routes and stops are
+/// listed as you type, and tapping one opens its screen (a route from its start). Before a
+/// search, it shows the starred stops with their next buses.
 struct StopLookupView: View {
     @Environment(AppModel.self) private var model
     @State private var input = ""
     @State private var results: [StopSearchResult] = []
-    /// The query `results` are for (`nil` before the first search finishes).
+    @State private var routeResults: [GTFSRoute] = []
+    /// The query `results` and `routeResults` are for (`nil` before the first search finishes).
     @State private var searchedQuery: String?
     @State private var searchError: String?
     @State private var path = NavigationPath()
@@ -23,7 +25,7 @@ struct StopLookupView: View {
                         HStack(spacing: 6) {
                             Image(systemName: "magnifyingglass")
                                 .foregroundStyle(.secondary)
-                            TextField("Stop number or name", text: $input)
+                            TextField("Stop or route, by number or name", text: $input)
                                 .textInputAutocapitalization(.never)
                                 .autocorrectionDisabled()
                                 .submitLabel(.search)
@@ -72,6 +74,7 @@ struct StopLookupView: View {
         .task(id: query) {
             guard !query.isEmpty else {
                 results = []
+                routeResults = []
                 searchedQuery = nil
                 return
             }
@@ -94,24 +97,38 @@ struct StopLookupView: View {
         } else if searchedQuery == nil {
             ProgressView()
                 .padding(.top, 24)
-        } else if results.isEmpty {
-            Text("No stops match “\(searchedQuery ?? query)”.")
+        } else if results.isEmpty && routeResults.isEmpty {
+            Text("No stops or routes match “\(searchedQuery ?? query)”.")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity, alignment: .leading)
         } else {
-            StopResultsCard(results: results) { result in
-                isInputFocused = false
-                path.append(result)
+            if !routeResults.isEmpty {
+                ResultsHeading(title: "Routes", systemImage: "point.topleft.down.to.point.bottomright.curvepath.fill")
+                RouteResultsCard(routes: routeResults) { route in
+                    isInputFocused = false
+                    // A route on its own, from where its trips start.
+                    path.append(LineReference(routeID: route.id, stopCode: nil))
+                }
+            }
+            if !results.isEmpty {
+                ResultsHeading(title: "Stops", systemImage: "bus.fill")
+                StopResultsCard(results: results) { result in
+                    isInputFocused = false
+                    path.append(result)
+                }
             }
         }
     }
 
     private func search(_ query: String) async {
         do {
-            let found = try await model.service.searchStops(query)
+            async let stops = model.service.searchStops(query)
+            async let routes = model.service.searchRoutes(query)
+            let (foundStops, foundRoutes) = try await (stops, routes)
             guard query == self.query else { return } // the text changed meanwhile
-            results = found
+            results = foundStops
+            routeResults = foundRoutes
             searchedQuery = query
             searchError = nil
         } catch {
@@ -120,7 +137,7 @@ struct StopLookupView: View {
     }
 
     /// Searches without waiting for a pause in typing, and hides the keyboard so the results
-    /// can be seen. Opening a stop is left to the user, even when the number matches exactly.
+    /// can be seen. Opening a result is left to the user, even when the number matches exactly.
     private func searchNow() {
         let query = self.query
         guard !query.isEmpty else { return }
@@ -142,7 +159,7 @@ private struct FavouriteStopsSection: View {
         VStack(spacing: 0) {
             if favourites.isEmpty {
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("Type a stop number, like 271, or part of a stop's name, like O'Connell.")
+                    Text("Type a stop's number or name, like 271 or O'Connell, or a route's, like 27 or Clare Hall.")
                     Label("Star a stop to see its next buses here.", systemImage: "star")
                 }
                 .font(.footnote)
@@ -151,7 +168,7 @@ private struct FavouriteStopsSection: View {
             } else {
                 VStack(spacing: 16) {
                     HStack(spacing: 6) {
-                        Label("Favourites", systemImage: "star.fill")
+                        Label("Favourite stops", systemImage: "star.fill")
                             .font(.headline)
                         Spacer(minLength: 0)
                     }
@@ -209,6 +226,71 @@ private struct FavouriteStopsSection: View {
             }
             try? await Task.sleep(for: AppModel.refreshInterval)
         }
+    }
+}
+
+/// A label above a group of search results.
+private struct ResultsHeading: View {
+    let title: String
+    let systemImage: String
+
+    var body: some View {
+        Label(title, systemImage: systemImage)
+            .font(.headline)
+            .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+/// Matching routes, each with its number and where it runs between.
+private struct RouteResultsCard: View {
+    let routes: [GTFSRoute]
+    let select: (GTFSRoute) -> Void
+
+    var body: some View {
+        VStack(spacing: 0) {
+            ForEach(Array(routes.enumerated()), id: \.element.id) { index, route in
+                if index > 0 { PanelSeparator() }
+                Button { select(route) } label: {
+                    RouteResultRow(route: route)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(.vertical, 4)
+        .background(Color.appCard)
+        .clipShape(RoundedRectangle(cornerRadius: PanelMetrics.cornerRadius, style: .continuous))
+        .shadow(color: PanelMetrics.shadowColor, radius: PanelMetrics.shadowRadius, y: PanelMetrics.shadowOffset)
+    }
+}
+
+private struct RouteResultRow: View {
+    let route: GTFSRoute
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Text(route.shortName)
+                .font(.system(size: 17, weight: .heavy, design: .rounded))
+                .foregroundStyle(TFIColors.ink)
+                .lineLimit(1)
+                .minimumScaleFactor(0.6)
+                .frame(width: 56, height: 34)
+                .background(TFIColors.yellow, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+
+            Text(route.longName.isEmpty ? "Route \(route.shortName)" : route.longName)
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundStyle(Color.cardInk)
+                .lineLimit(2)
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+            Image(systemName: "chevron.right")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(Color.cardSecondaryInk.opacity(0.7))
+        }
+        .padding(.horizontal, PanelMetrics.horizontalPadding)
+        .padding(.vertical, 10)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Route \(route.shortName), \(route.longName)")
     }
 }
 

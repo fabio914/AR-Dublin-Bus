@@ -49,7 +49,7 @@ struct LineDetailsTests {
     @Test func groupsTheTripsByDestination() throws {
         let line = try #require(try load().lineDetails(routeID: "r27", stopCode: "271"))
         #expect(line.route.shortName == "27")
-        #expect(line.stop.code == "271")
+        #expect(line.stop?.code == "271")
         #expect(line.directions.map(\.headsign) == ["Clare Hall", "Decoy Depot"])
 
         let clareHall = line.directions[0]
@@ -80,9 +80,30 @@ struct LineDetailsTests {
         #expect(clareHall.timetable(on: GTFSDate(year: 2026, month: 12, day: 25), services: line.services).map(\.trip.tripID) == ["L3"])
     }
 
+    @Test func fromTheStartTheTripsLeaveTheirFirstStop() throws {
+        let line = try #require(try load().lineDetails(routeID: "r27", stopCode: nil))
+        #expect(line.stop == nil)
+        #expect(line.directions.map(\.headsign) == ["Clare Hall", "Decoy Depot"])
+
+        let clareHall = line.directions[0]
+        // The full trip is the most frequent, so its stops stand for the destination, from its start.
+        #expect(clareHall.stops.map(\.stop.code) == ["115", "271", "2711"])
+        #expect(clareHall.stopIndex == 0)
+        #expect(clareHall.stops.map(\.offset) == [0, 20 * 60, 35 * 60])
+        // L6, which ends at 271, leaves its first stop like the others; L4 starts at 271.
+        #expect(clareHall.departures.map(\.tripID) == ["L1", "L4", "L2", "L3", "L6"])
+        #expect(clareHall.departures.map(\.time) == [7 * 3600 + 50 * 60, 8 * 3600 + 40 * 60, 9 * 3600, 10 * 3600, 12 * 3600])
+
+        let weekday = clareHall.timetable(on: monday, services: line.services)
+        #expect(weekday.map(\.trip.tripID) == ["L1", "L4", "L2", "L6"])
+        #expect(weekday[0].trip == TripReference(tripID: "L1", serviceDate: monday, stopID: "8220DB000115", stopSequence: 1))
+        #expect(weekday[1].trip.stopID == GTFSFixture.stopID)
+    }
+
     @Test func unknownRouteOrStopHasNoLine() throws {
         let timetable = try load()
         #expect(try timetable.lineDetails(routeID: "nope", stopCode: "271") == nil)
+        #expect(try timetable.lineDetails(routeID: "nope", stopCode: nil) == nil)
         #expect(try timetable.lineDetails(routeID: "r27", stopCode: "999999") == nil)
         // Route 44 ends at 2711 and never leaves from it.
         #expect(try timetable.lineDetails(routeID: "r44", stopCode: "2711")?.directions.isEmpty == true)

@@ -326,25 +326,14 @@ final class StaticTimetable: @unchecked Sendable {
     }
 
     /// A route's trips leaving the stops with this code (trips ending there are left out),
-    /// grouped by destination, each with a typical trip's stops and path. `nil` if the stop or
-    /// route isn't in the timetable.
-    func lineDetails(routeID: String, stopCode: String) throws -> LineDetails? {
+    /// grouped by destination, each with a typical trip's stops and path. Without a stop code,
+    /// the route's trips from where each starts. `nil` if the stop or route isn't in the timetable.
+    func lineDetails(routeID: String, stopCode: String?) throws -> LineDetails? {
+        guard let stopCode else { return try lineDetailsFromStart(routeID: routeID) }
         let codeStops = stopsByCode[stopCode] ?? []
         let stopRows = codeStops.compactMap { stopRowsByID[$0.id] }
         guard !stopRows.isEmpty, let route = routes[routeID],
               let stop = codeStops.first(where: { $0.coordinate != nil }) ?? codeStops.first else { return nil }
-
-        struct Call {
-            let departure: LineDirection.Departure
-            let pattern: Int
-            let shape: Int?
-        }
-        /// The trips sharing a pattern and shape, so their stops and path are the same.
-        struct Variant: Hashable {
-            let pattern: Int
-            let sequence: Int
-            let shape: Int?
-        }
 
         return try withDatabase { database in
             let query = try database.prepare("""
@@ -357,7 +346,7 @@ final class StaticTimetable: @unchecked Sendable {
                 JOIN headsigns h ON h.id = t.headsign
                 WHERE ps.stop = ?1 AND ps.is_last = 0 AND r.route_id = ?2
                 """)
-            var callsByHeadsign: [String: [Call]] = [:]
+            var callsByHeadsign: [String: [LineCall]] = [:]
             for row in stopRows {
                 guard let stopID = stopsByRow[row]?.id else { continue }
                 query.bind(row, at: 1)
@@ -368,59 +357,113 @@ final class StaticTimetable: @unchecked Sendable {
                         stopID: stopID, stopSequence: query.int(3)
                     )
                     callsByHeadsign[query.string(6), default: []]
-                        .append(Call(departure: departure, pattern: query.int(4), shape: query.optionalInt(5)))
+                        .append(LineCall(departure: departure, pattern: query.int(4), shape: query.optionalInt(5)))
                 }
                 query.reset()
             }
-
-            let patternQuery = try database.prepare("SELECT calls FROM patterns WHERE id = ?")
-            let shapeQuery = try database.prepare("SELECT points FROM shapes WHERE id = ?")
-
-            let directions = try callsByHeadsign.compactMap { headsign, calls -> LineDirection? in
-                // The stops and path of the most frequent variant stand for the destination.
-                var counts: [Variant: Int] = [:]
-                for call in calls {
-                    counts[Variant(pattern: call.pattern, sequence: call.departure.stopSequence, shape: call.shape), default: 0] += 1
-                }
-                guard let variant = counts.max(by: { ($0.value, $1.key.pattern) < ($1.value, $0.key.pattern) })?.key else { return nil }
-
-                patternQuery.bind(variant.pattern, at: 1)
-                let values = try patternQuery.step() ? ShapeCoding.decodeIntegers(patternQuery.data(0)) : []
-                patternQuery.reset()
-
-                // Calls are four integers each: sequence, stop row, departure offset, dwell.
-                var entries: [(stop: GTFSStop, sequence: Int, arrival: Int)] = []
-                var index = 0
-                while index + 3 < values.count {
-                    if let stop = stopsByRow[values[index + 1]] {
-                        entries.append((stop, values[index], values[index + 2] - values[index + 3]))
-                    }
-                    index += 4
-                }
-                guard let target = entries.firstIndex(where: { $0.sequence == variant.sequence }) else { return nil }
-                let origin = entries[target].arrival
-                let stops = entries.map { LineDirection.Stop(stop: $0.stop, sequence: $0.sequence, offset: $0.arrival - origin) }
-
-                var shape: [CLLocationCoordinate2D] = []
-                if let shapeRow = variant.shape {
-                    shapeQuery.bind(shapeRow, at: 1)
-                    if try shapeQuery.step() { shape = ShapeCoding.decode(shapeQuery.data(0)) }
-                    shapeQuery.reset()
-                }
-                if shape.count < 2 { shape = stops.compactMap(\.stop.coordinate) }
-
-                return LineDirection(
-                    headsign: headsign,
-                    stops: stops,
-                    stopIndex: target,
-                    shape: shape,
-                    departures: calls.map(\.departure).sorted { ($0.time, $0.tripID) < ($1.time, $1.tripID) }
-                )
-            }
-            .sorted { ($0.departures.count, $1.headsign) > ($1.departures.count, $0.headsign) }
-
-            return LineDetails(route: route, stop: stop, directions: directions, services: services)
+            return LineDetails(route: route, stop: stop, directions: try directions(callsByHeadsign, in: database), services: services)
         }
+    }
+
+    /// A route's trips from their first stop, grouped by destination.
+    private func lineDetailsFromStart(routeID: String) throws -> LineDetails? {
+        guard let route = routes[routeID] else { return nil }
+
+        return try withDatabase { database in
+            let query = try database.prepare("""
+                SELECT t.trip_id, s.service_id, t.start, t.pattern, t.shape, h.text
+                FROM trips t
+                JOIN routes r ON r.id = t.route
+                JOIN services s ON s.id = t.service
+                JOIN headsigns h ON h.id = t.headsign
+                WHERE r.route_id = ?1 AND t.pattern IS NOT NULL
+                """)
+            let patternQuery = try database.prepare("SELECT calls FROM patterns WHERE id = ?")
+            /// Each pattern's first call: its stop, sequence and offset from the trip's start.
+            var firstCalls: [Int: (stop: GTFSStop, sequence: Int, arrival: Int)?] = [:]
+            var callsByHeadsign: [String: [LineCall]] = [:]
+
+            query.bind(routeID, at: 1)
+            while try query.step() {
+                let pattern = query.int(3)
+                if firstCalls[pattern] == nil {
+                    patternQuery.bind(pattern, at: 1)
+                    let values = try patternQuery.step() ? ShapeCoding.decodeIntegers(patternQuery.data(0)) : []
+                    patternQuery.reset()
+                    // Calls are four integers each: sequence, stop row, departure offset, dwell.
+                    if values.count >= 4, let stop = stopsByRow[values[1]] {
+                        firstCalls[pattern] = (stop, values[0], values[2] - values[3])
+                    } else {
+                        firstCalls[pattern] = .some(nil)
+                    }
+                }
+                guard let first = firstCalls[pattern] ?? nil else { continue }
+                let departure = LineDirection.Departure(
+                    tripID: query.string(0), serviceID: query.string(1), time: query.int(2) + first.arrival,
+                    stopID: first.stop.id, stopSequence: first.sequence
+                )
+                callsByHeadsign[query.string(5), default: []]
+                    .append(LineCall(departure: departure, pattern: pattern, shape: query.optionalInt(4)))
+            }
+            return LineDetails(route: route, stop: nil, directions: try directions(callsByHeadsign, in: database), services: services)
+        }
+    }
+
+    /// One destination per headsign: the stops and path of its most frequent variant (as seen
+    /// from the stop the calls are at), and all its calls, the busiest destination first.
+    private func directions(_ callsByHeadsign: [String: [LineCall]], in database: SQLiteDatabase) throws -> [LineDirection] {
+        /// The trips sharing a pattern and shape, so their stops and path are the same.
+        struct Variant: Hashable {
+            let pattern: Int
+            let sequence: Int
+            let shape: Int?
+        }
+
+        let patternQuery = try database.prepare("SELECT calls FROM patterns WHERE id = ?")
+        let shapeQuery = try database.prepare("SELECT points FROM shapes WHERE id = ?")
+
+        return try callsByHeadsign.compactMap { headsign, calls -> LineDirection? in
+            // The stops and path of the most frequent variant stand for the destination.
+            var counts: [Variant: Int] = [:]
+            for call in calls {
+                counts[Variant(pattern: call.pattern, sequence: call.departure.stopSequence, shape: call.shape), default: 0] += 1
+            }
+            guard let variant = counts.max(by: { ($0.value, $1.key.pattern) < ($1.value, $0.key.pattern) })?.key else { return nil }
+
+            patternQuery.bind(variant.pattern, at: 1)
+            let values = try patternQuery.step() ? ShapeCoding.decodeIntegers(patternQuery.data(0)) : []
+            patternQuery.reset()
+
+            // Calls are four integers each: sequence, stop row, departure offset, dwell.
+            var entries: [(stop: GTFSStop, sequence: Int, arrival: Int)] = []
+            var index = 0
+            while index + 3 < values.count {
+                if let stop = stopsByRow[values[index + 1]] {
+                    entries.append((stop, values[index], values[index + 2] - values[index + 3]))
+                }
+                index += 4
+            }
+            guard let target = entries.firstIndex(where: { $0.sequence == variant.sequence }) else { return nil }
+            let origin = entries[target].arrival
+            let stops = entries.map { LineDirection.Stop(stop: $0.stop, sequence: $0.sequence, offset: $0.arrival - origin) }
+
+            var shape: [CLLocationCoordinate2D] = []
+            if let shapeRow = variant.shape {
+                shapeQuery.bind(shapeRow, at: 1)
+                if try shapeQuery.step() { shape = ShapeCoding.decode(shapeQuery.data(0)) }
+                shapeQuery.reset()
+            }
+            if shape.count < 2 { shape = stops.compactMap(\.stop.coordinate) }
+
+            return LineDirection(
+                headsign: headsign,
+                stops: stops,
+                stopIndex: target,
+                shape: shape,
+                departures: calls.map(\.departure).sorted { ($0.time, $0.tripID) < ($1.time, $1.tripID) }
+            )
+        }
+        .sorted { ($0.departures.count, $1.headsign) > ($1.departures.count, $0.headsign) }
     }
 
     // MARK: Stops
@@ -451,6 +494,11 @@ final class StaticTimetable: @unchecked Sendable {
     /// Stops whose number or name matches `query` (see `StopSearchIndex`), with their routes.
     func searchStops(_ query: String, limit: Int) throws -> [StopSearchResult] {
         try withRoutes(searchIndex.search(query, limit: limit))
+    }
+
+    /// Routes whose number or name matches `query` (see `RouteSearch`).
+    func searchRoutes(_ query: String, limit: Int) -> [GTFSRoute] {
+        RouteSearch.search(query, in: routes.values, limit: limit)
     }
 
     /// Each stop with the routes calling at it (at any stop sharing its code), sorted naturally.
@@ -496,4 +544,11 @@ extension GTFSDate {
     init(intValue: Int) {
         self.init(year: intValue / 10_000, month: (intValue / 100) % 100, day: intValue % 100)
     }
+}
+
+/// A trip calling at the stop a line is seen from, with what decides its stops and path.
+private struct LineCall {
+    let departure: LineDirection.Departure
+    let pattern: Int
+    let shape: Int?
 }

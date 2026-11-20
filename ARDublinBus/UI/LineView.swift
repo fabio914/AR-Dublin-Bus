@@ -25,8 +25,13 @@ struct LineView: View {
             if let details, let direction = direction(in: details) {
                 content(details: details, direction: direction)
             } else if details != nil {
-                ContentUnavailableView("No buses leave from here", systemImage: "moon.zzz.fill",
-                                       description: Text("This route doesn't pick up passengers at stop \(reference.stopCode)."))
+                if let stopCode = reference.stopCode {
+                    ContentUnavailableView("No buses leave from here", systemImage: "moon.zzz.fill",
+                                           description: Text("This route doesn't pick up passengers at stop \(stopCode)."))
+                } else {
+                    ContentUnavailableView("No buses on this route", systemImage: "moon.zzz.fill",
+                                           description: Text("The timetable has no trips for this route."))
+                }
             } else if let error {
                 ContentUnavailableView("Couldn't load this route", systemImage: "exclamationmark.triangle", description: Text(error))
             } else {
@@ -38,8 +43,9 @@ struct LineView: View {
         .navigationTitle(details.map { "Route \($0.route.shortName)" } ?? "Route")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            // In place of the title; the route is in the cards' subtitles.
-            if let details, direction(in: details) != nil {
+            // In place of the title, from the start (so the title doesn't show first); the route
+            // is in the cards' subtitles. Not when there's nothing to show.
+            if error == nil, details?.directions.isEmpty != true {
                 ToolbarItem(placement: .principal) {
                     Picker("Show", selection: $section) {
                         ForEach(Section.allCases) { Text($0.rawValue).tag($0) }
@@ -76,7 +82,7 @@ struct LineView: View {
         RouteMap(
             path: direction.shape,
             stops: direction.stops.map { RouteMap.Stop(id: $0.sequence, stop: $0.stop) },
-            highlighted: direction.stops[direction.stopIndex].stop,
+            highlighted: details.stop == nil ? nil : direction.stops[direction.stopIndex].stop,
             vehicles: vehicles ?? [],
             routeKey: direction.id
         )
@@ -116,7 +122,8 @@ struct LineView: View {
                             LineTimetableCard(details: details, direction: direction, towards: towards(details, selected: direction),
                                               now: context.date)
                         case .stops:
-                            LineStopsCard(route: details.route, direction: direction, towards: towards(details, selected: direction),
+                            LineStopsCard(route: details.route, direction: direction, isFromStop: details.stop != nil,
+                                          towards: towards(details, selected: direction),
                                           map: map(details: details, direction: direction))
                         }
                     }
@@ -124,7 +131,7 @@ struct LineView: View {
                 }
             }
             .panelCardScrollView()
-            .onAppear { scrollToStop(proxy, direction: direction) }
+            .onAppear { scrollToStop(proxy, details: details, direction: direction) }
             // A scroll view of its own for each list (which scrolls to the stop as it appears),
             // so switching lists doesn't keep an offset past the end of a shorter one, where the
             // lazy stack shows nothing.
@@ -132,8 +139,9 @@ struct LineView: View {
         }
     }
 
-    private func scrollToStop(_ proxy: ScrollViewProxy, direction: LineDirection) {
-        guard section == .stops else { return }
+    private func scrollToStop(_ proxy: ScrollViewProxy, details: LineDetails, direction: LineDirection) {
+        // From the start of the route, the list starts at the top.
+        guard section == .stops, details.stop != nil else { return }
         // After the list is laid out.
         Task { @MainActor in
             proxy.scrollTo(direction.stops[direction.stopIndex].id, anchor: .center)
@@ -147,6 +155,8 @@ struct LineView: View {
 private struct LineStopsCard<Map: View>: View {
     let route: GTFSRoute
     let direction: LineDirection
+    /// Seen from the user's stop (highlighted), rather than from the start of the route.
+    let isFromStop: Bool
     /// Picks the destination from a button on the card's header.
     let towards: PanelHeader.OptionsMenu?
     /// Shown under the card's title, pinned with it.
@@ -157,11 +167,12 @@ private struct LineStopsCard<Map: View>: View {
                   optionsMenu: towards, banner: map, footer: footer) {
             VStack(spacing: 0) {
                 ForEach(Array(direction.stops.enumerated()), id: \.element.id) { index, stop in
+                    let isUsersStop = isFromStop && index == direction.stopIndex
                     // Every stop but the user's opens its own screen.
-                    StopLink(stopCode: stop.stop.code, isEnabled: index != direction.stopIndex) {
+                    StopLink(stopCode: stop.stop.code, isEnabled: !isUsersStop) {
                         LineStopRow(
                             stop: stop,
-                            position: index < direction.stopIndex ? .before : index == direction.stopIndex ? .here : .after,
+                            position: index < direction.stopIndex ? .before : isUsersStop ? .here : .after,
                             isFirst: index == 0,
                             isLast: index == direction.stops.count - 1
                         )
@@ -176,7 +187,7 @@ private struct LineStopsCard<Map: View>: View {
     private var footer: PanelFooter<TupleView<(Image, Text)>> {
         PanelFooter {
             Image(systemName: "clock")
-            Text("Typical journey times from your stop")
+            Text(isFromStop ? "Typical journey times from your stop" : "Typical journey times from the start")
         }
     }
 
@@ -222,6 +233,9 @@ private struct LineStopRow: View {
             Text("Your stop")
                 .font(.system(size: 13, weight: .bold))
                 .foregroundStyle(Color.cardInk)
+        case .after where isFirst && stop.offset == 0:
+            // The start of the route, which the times are from.
+            EmptyView()
         case .after:
             Text("\(max(0, Int((Double(stop.offset) / 60).rounded()))) min")
                 .font(.system(size: 15, weight: .semibold, design: .rounded))
@@ -253,7 +267,7 @@ private struct LineTimetableCard: View {
         let next = dayOffset == 0 ? departures.first { $0.time >= now } : nil
 
         PanelCard(title: "To \(direction.headsign)",
-                  subtitle: "Route \(details.route.shortName) · Stop \(details.stop.code) · \(dayName(date, today: today))",
+                  subtitle: "Route \(details.route.shortName) · \(from) · \(dayName(date, today: today))",
                   icon: "calendar", optionsMenu: towards, footer: footer) {
             dayPicker(today: today)
                 .padding(.vertical, 10)
@@ -277,6 +291,11 @@ private struct LineTimetableCard: View {
             Image(systemName: "hand.tap")
             Text("Tap a time to follow that bus")
         }
+    }
+
+    /// Where the times are at: the user's stop, or where the route starts.
+    private var from: String {
+        details.stop.map { "Stop \($0.code)" } ?? "From \(direction.stops[direction.stopIndex].stop.name)"
     }
 
     private func dayPicker(today: GTFSDate) -> some View {
