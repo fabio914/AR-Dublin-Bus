@@ -58,5 +58,19 @@ private struct MainTabs: View {
                 SettingsView()
             }
         }
+        .minimizesTabBarOnScroll()
+        .environment(\.isAboveTabBar, true)
+    }
+}
+
+private extension View {
+    /// The tab bar shrinks while scrolling down, and comes back when scrolling up.
+    @ViewBuilder
+    func minimizesTabBarOnScroll() -> some View {
+        if #available(iOS 26.0, *) {
+            tabBarMinimizeBehavior(.onScrollDown)
+        } else {
+            self
+        }
     }
 }

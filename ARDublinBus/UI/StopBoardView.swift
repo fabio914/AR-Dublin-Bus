@@ -29,6 +29,7 @@ struct StopDetailsView: View {
                 .padding([.horizontal, .bottom])
             }
         }
+        .panelCardScrollView()
         .background(Color.appBackground)
         .task(id: stopCode) {
             content = .loading(stopCode: stopCode)
@@ -93,6 +94,8 @@ struct StopBoardSheet: View {
                 }
                 .routeDestinations()
         }
+        // A sheet covers the tab bar.
+        .environment(\.isAboveTabBar, false)
         .presentationDetents([.medium, .large])
         // Keep the screen behind usable while the board is at half height.
         .presentationBackgroundInteraction(.enabled(upThrough: .medium))

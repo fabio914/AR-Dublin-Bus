@@ -111,9 +111,12 @@ struct LineView: View {
                         .padding([.horizontal, .bottom], 16)
                     }
                 }
+                .panelCardScrollView()
                 .onAppear { scrollToStop(proxy, direction: direction) }
-                .onChange(of: section) { scrollToStop(proxy, direction: direction) }
-                .onChange(of: direction.id) { scrollToStop(proxy, direction: direction) }
+                // A scroll view of its own for each list (which scrolls to the stop as it
+                // appears), so switching lists doesn't keep an offset past the end of a shorter
+                // one, where the lazy stack shows nothing.
+                .id("\(section.id)-\(direction.id)")
             }
         }
     }

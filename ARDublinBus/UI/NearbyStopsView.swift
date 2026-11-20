@@ -203,6 +203,7 @@ struct NearbyStopsView: View {
             .padding(.horizontal, 16)
             .padding(.bottom, 24)
         }
+        .panelCardScrollView()
         .background(Color.appBackground)
         .refreshable { runID = UUID() }
     }

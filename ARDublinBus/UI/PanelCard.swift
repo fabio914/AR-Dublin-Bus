@@ -112,7 +112,7 @@ private struct PanelCardPiece<Content: View>: View {
 private extension View {
     /// While this header (`.top`) or footer (`.bottom`) is pinned, the screen's background behind
     /// it, so the card scrolling under it is hidden around its rounded corners, beside it (with
-    /// its shadow) and, for a footer, below it. Not drawn otherwise, so it doesn't cover the
+    /// its shadow) and beyond it, including behind the translucent bars. Not drawn otherwise, so it doesn't cover the
     /// shadow of the card before.
     func pinnedBackground(edge: VerticalEdge, isPinned: Binding<Bool>) -> some View {
         let room = PanelMetrics.shadowRadius * 3
@@ -120,7 +120,8 @@ private extension View {
             if isPinned.wrappedValue {
                 Color.appBackground
                     .padding(.horizontal, -room)
-                    .padding(.bottom, edge == .bottom ? -PanelMetrics.pinnedFooterCover : 0)
+                    // Over what has scrolled past: under the bars above a header, and below a footer.
+                    .padding(edge == .top ? .top : .bottom, -PanelMetrics.pinnedCover)
             }
         }
         .onGeometryChange(for: Bool.self) { proxy in
@@ -151,6 +152,24 @@ struct PanelCardStack<Content: View>: View {
 extension EnvironmentValues {
     /// Whether `PanelCard`s are sections of a `PanelCardStack`.
     @Entry var panelCardPins = false
+    /// Whether the screen is shown above the tab bar (and not in a sheet over it).
+    @Entry var isAboveTabBar = false
+}
+
+extension View {
+    /// For a scroll view holding a `PanelCardStack`: above the tab bar, pinned footers stop a
+    /// little short of it, rather than touching it.
+    func panelCardScrollView() -> some View {
+        modifier(PanelCardScrollView())
+    }
+}
+
+private struct PanelCardScrollView: ViewModifier {
+    @Environment(\.isAboveTabBar) private var isAboveTabBar
+
+    func body(content: Content) -> some View {
+        content.safeAreaPadding(.bottom, isAboveTabBar ? PanelMetrics.tabBarFooterGap : 0)
+    }
 }
 
 enum PanelMetrics {
@@ -161,8 +180,12 @@ enum PanelMetrics {
     static let shadowColor = Color.black.opacity(0.12)
     static let shadowRadius: CGFloat = 10
     static let shadowOffset: CGFloat = 3
-    /// How far below a pinned footer the background reaches, over the bottom bars.
-    static let pinnedFooterCover: CGFloat = 200
+    /// How far above a pinned header and below a pinned footer the background reaches, to
+    /// cover what's behind the bars.
+    static let pinnedCover: CGFloat = 300
+    /// The space between a pinned footer and the tab bar, like the home indicator's margin
+    /// when there's no tab bar.
+    static let tabBarFooterGap: CGFloat = 16
     static let footerBackground = Color.cardFooter
 }
 

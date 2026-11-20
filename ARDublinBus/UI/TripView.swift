@@ -105,6 +105,7 @@ private struct TripStopsList: View {
                 }
                 .padding([.horizontal, .bottom], 16)
             }
+            .panelCardScrollView()
             .onAppear {
                 if let origin = journey.origin {
                     proxy.scrollTo(origin.id, anchor: .center)

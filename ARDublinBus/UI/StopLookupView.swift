@@ -61,6 +61,7 @@ struct StopLookupView: View {
                 .padding()
             }
             .scrollDismissesKeyboard(.interactively)
+            .panelCardScrollView()
             .background(Color.appBackground)
             .navigationTitle("Search")
             .navigationBarTitleDisplayMode(.inline)
