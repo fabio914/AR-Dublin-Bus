@@ -30,6 +30,8 @@ final class StaticTimetable: @unchecked Sendable {
     private let stopsByRow: [Int: GTFSStop]
     private let stopRowsByID: [String: Int]
     private let searchIndex: StopSearchIndex
+    /// Every route with its destinations, for `searchRoutes`.
+    private let routeEntries: [RouteSearchResult]
     private let database: SQLiteDatabase
     /// SQLite connections must not be used from two threads at once.
     private let lock = NSLock()
@@ -80,6 +82,26 @@ final class StaticTimetable: @unchecked Sendable {
             routes[route.id] = route
         }
         self.routes = routes
+
+        // Each route's destinations (trip headsigns), the most frequent first.
+        var destinationCounts: [String: [(name: String, trips: Int)]] = [:]
+        let destinationQuery = try database.prepare("""
+            SELECT r.route_id, h.text, COUNT(*) FROM trips t
+            JOIN routes r ON r.id = t.route
+            JOIN headsigns h ON h.id = t.headsign
+            GROUP BY t.route, t.headsign
+            """)
+        while try destinationQuery.step() {
+            let name = destinationQuery.string(1)
+            guard !name.isEmpty else { continue }
+            destinationCounts[destinationQuery.string(0), default: []].append((name, destinationQuery.int(2)))
+        }
+        routeEntries = routes.values.map { route in
+            let destinations = (destinationCounts[route.id] ?? [])
+                .sorted { $0.trips != $1.trips ? $0.trips > $1.trips : $0.name < $1.name }
+                .map(\.name)
+            return RouteSearchResult(route: route, destinations: destinations)
+        }
 
         var services = ServiceCalendar()
         let serviceQuery = try database.prepare("SELECT service_id, days, start_date, end_date FROM services WHERE days IS NOT NULL")
@@ -496,9 +518,9 @@ final class StaticTimetable: @unchecked Sendable {
         try withRoutes(searchIndex.search(query, limit: limit))
     }
 
-    /// Routes whose number or name matches `query` (see `RouteSearch`).
-    func searchRoutes(_ query: String, limit: Int) -> [GTFSRoute] {
-        RouteSearch.search(query, in: routes.values, limit: limit)
+    /// Routes whose number, name or destinations match `query` (see `RouteSearch`).
+    func searchRoutes(_ query: String, limit: Int) -> [RouteSearchResult] {
+        RouteSearch.search(query, in: routeEntries, limit: limit)
     }
 
     /// Each stop with the routes calling at it (at any stop sharing its code), sorted naturally.

@@ -100,6 +100,14 @@ struct LineDetailsTests {
         #expect(weekday[1].trip.stopID == GTFSFixture.stopID)
     }
 
+    @Test func routesListTheirDestinationsMostFrequentFirst() throws {
+        let timetable = try load()
+        let found = timetable.searchRoutes("decoy", limit: 5)
+        #expect(found.map(\.route.id) == ["r27"])
+        #expect(found.first?.destinations == ["Clare Hall", "Decoy Depot"])
+        #expect(timetable.searchRoutes("44", limit: 5).first?.destinations == ["Enniskerry"])
+    }
+
     @Test func unknownRouteOrStopHasNoLine() throws {
         let timetable = try load()
         #expect(try timetable.lineDetails(routeID: "nope", stopCode: "271") == nil)

@@ -8,7 +8,7 @@ struct StopLookupView: View {
     @Environment(AppModel.self) private var model
     @State private var input = ""
     @State private var results: [StopSearchResult] = []
-    @State private var routeResults: [GTFSRoute] = []
+    @State private var routeResults: [RouteSearchResult] = []
     /// The query `results` and `routeResults` are for (`nil` before the first search finishes).
     @State private var searchedQuery: String?
     @State private var searchError: String?
@@ -23,6 +23,8 @@ struct StopLookupView: View {
                 VStack(spacing: 0) {
                     content
                 }
+                // Full width, also when it only holds a spinner or a message.
+                .frame(maxWidth: .infinity)
                 .padding([.horizontal, .bottom])
             }
             .scrollDismissesKeyboard(.interactively)
@@ -79,10 +81,10 @@ struct StopLookupView: View {
             // Each section brings the space above it.
             PanelCardStack {
                 if !routeResults.isEmpty {
-                    RouteResultsSection(routes: routeResults) { route in
+                    RouteResultsSection(results: routeResults) { result in
                         isInputFocused = false
                         // A route on its own, from where its trips start.
-                        path.append(LineReference(routeID: route.id, stopCode: nil))
+                        path.append(LineReference(routeID: result.route.id, stopCode: nil))
                     }
                 }
                 if !results.isEmpty {
@@ -205,17 +207,17 @@ private struct FavouriteStopsSection: View {
     }
 }
 
-/// Matching routes, each with its number and where it runs between.
+/// Matching routes, each with its number and destinations.
 private struct RouteResultsSection: View {
-    let routes: [GTFSRoute]
-    let select: (GTFSRoute) -> Void
+    let results: [RouteSearchResult]
+    let select: (RouteSearchResult) -> Void
 
     var body: some View {
         PanelListSection(title: "Routes", systemImage: "point.topleft.down.to.point.bottomright.curvepath.fill") {
-            ForEach(Array(routes.enumerated()), id: \.element.id) { index, route in
-                if index > 0 { PanelSeparator() }
-                Button { select(route) } label: {
-                    RouteResultRow(route: route)
+            ForEach(Array(results.enumerated()), id: \.element.id) { index, result in
+                if index > 0 { PanelSeparator(inset: PanelMetrics.listPadding) }
+                Button { select(result) } label: {
+                    RouteResultRow(result: result)
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
@@ -225,7 +227,8 @@ private struct RouteResultsSection: View {
 }
 
 private struct RouteResultRow: View {
-    let route: GTFSRoute
+    let result: RouteSearchResult
+    private var route: GTFSRoute { result.route }
 
     var body: some View {
         HStack(spacing: 12) {
@@ -237,7 +240,7 @@ private struct RouteResultRow: View {
                 .frame(width: 56, height: 34)
                 .background(TFIColors.yellow, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
 
-            Text(route.longName.isEmpty ? "Route \(route.shortName)" : route.longName)
+            Text(destinations)
                 .font(.system(size: 16, weight: .semibold))
                 .foregroundStyle(Color.cardInk)
                 .lineLimit(2)
@@ -247,10 +250,16 @@ private struct RouteResultRow: View {
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(Color.cardSecondaryInk.opacity(0.7))
         }
-        .padding(.horizontal, PanelMetrics.horizontalPadding)
-        .padding(.vertical, 10)
+        .padding(.horizontal, PanelMetrics.listPadding)
+        .padding(.vertical, PanelMetrics.listRowVerticalPadding)
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("Route \(route.shortName), \(route.longName)")
+        .accessibilityLabel("Route \(route.shortName), to \(result.destinations.isEmpty ? route.longName : result.destinations.formatted(.list(type: .or)))")
+    }
+
+    /// Where its trips go, the most frequent first; the route's name if that's unknown.
+    private var destinations: String {
+        if !result.destinations.isEmpty { return result.destinations.joined(separator: " · ") }
+        return route.longName.isEmpty ? "Route \(route.shortName)" : route.longName
     }
 }
 
@@ -262,7 +271,7 @@ private struct StopResultsSection: View {
     var body: some View {
         PanelListSection(title: "Stops", systemImage: "bus.fill") {
             ForEach(Array(results.enumerated()), id: \.element.id) { index, result in
-                if index > 0 { PanelSeparator() }
+                if index > 0 { PanelSeparator(inset: PanelMetrics.listPadding) }
                 Button { select(result) } label: {
                     StopResultRow(result: result)
                         .contentShape(Rectangle())
@@ -309,8 +318,8 @@ private struct StopResultRow: View {
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(Color.cardSecondaryInk.opacity(0.7))
         }
-        .padding(.horizontal, PanelMetrics.horizontalPadding)
-        .padding(.vertical, 10)
+        .padding(.horizontal, PanelMetrics.listPadding)
+        .padding(.vertical, PanelMetrics.listRowVerticalPadding)
     }
 
     private func routeBadges(_ count: Int) -> some View {

@@ -112,35 +112,34 @@ struct PanelListSection<Content: View>: View {
     @State private var headerHeight: CGFloat = 0
     @State private var footerHeight: CGFloat = 0
 
-    /// The card's top and bottom edges are as tall as its rounded corners, and the rows tuck
-    /// this much of their own padding under them.
-    static var edgeOverlap: CGFloat { 6 }
-
     var body: some View {
         if pins {
             Section {
-                PanelCardPiece(edge: nil) {
-                    content.padding(.vertical, -Self.edgeOverlap)
+                PanelCardPiece(edge: nil, radius: PanelMetrics.listCornerRadius) {
+                    // The rows' own padding at the ends goes under the card's edges, which are
+                    // as tall as the space around the rows at the sides.
+                    VStack(spacing: 0) { content }
+                        .padding(.vertical, -PanelMetrics.listRowVerticalPadding)
                 }
                 .clippedUnderPinnedViews(headerHeight: headerHeight, footerHeight: footerHeight)
             } header: {
                 VStack(spacing: 8) {
                     label
-                    PanelCardPiece(edge: .top) { edge }
+                    PanelCardPiece(edge: .top, radius: PanelMetrics.listCornerRadius) { edge }
                 }
                 .padding(.top, PanelMetrics.cardSpacing)
                 .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { headerHeight = $0 }
             } footer: {
-                PanelCardPiece(edge: .bottom) { edge }
+                PanelCardPiece(edge: .bottom, radius: PanelMetrics.listCornerRadius) { edge }
                     .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { footerHeight = $0 }
             }
         } else {
             VStack(spacing: 8) {
                 label
                 VStack(spacing: 0) { content }
-                    .padding(.vertical, 4)
+                    .padding(.vertical, PanelMetrics.listPadding - PanelMetrics.listRowVerticalPadding)
                     .background(Color.appCard)
-                    .clipShape(RoundedRectangle(cornerRadius: PanelMetrics.cornerRadius, style: .continuous))
+                    .clipShape(RoundedRectangle(cornerRadius: PanelMetrics.listCornerRadius, style: .continuous))
             }
         }
     }
@@ -152,7 +151,7 @@ struct PanelListSection<Content: View>: View {
     }
 
     private var edge: some View {
-        Color.clear.frame(height: PanelMetrics.cornerRadius - Self.edgeOverlap)
+        Color.clear.frame(height: PanelMetrics.listPadding)
     }
 }
 
@@ -161,10 +160,10 @@ struct PanelListSection<Content: View>: View {
 /// one, so the slices look like one card.
 private struct PanelCardPiece<Content: View>: View {
     let edge: VerticalEdge?
+    var radius = PanelMetrics.cornerRadius
     @ViewBuilder let content: Content
 
     var body: some View {
-        let radius = PanelMetrics.cornerRadius
         let shape = UnevenRoundedRectangle(
             topLeadingRadius: edge == .top ? radius : 0,
             bottomLeadingRadius: edge == .bottom ? radius : 0,
@@ -255,6 +254,12 @@ private struct PanelCardScrollView: ViewModifier {
 enum PanelMetrics {
     static let cornerRadius: CGFloat = 24
     static let horizontalPadding: CGFloat = 16
+    /// For `PanelListSection`: a smaller corner radius, and the space around its rows, the same
+    /// at the sides as above the first and below the last.
+    static let listCornerRadius: CGFloat = 12
+    static let listPadding: CGFloat = 12
+    /// The space above and below each row's content in a `PanelListSection`.
+    static let listRowVerticalPadding: CGFloat = 10
     /// The space above each card in a `PanelCardStack`, kept above a pinned header.
     static let cardSpacing: CGFloat = 16
     static let shadowColor = Color.black.opacity(0.12)
@@ -381,11 +386,13 @@ struct PanelHeader: View {
 
 /// A hairline between rows, inset like iOS lists.
 struct PanelSeparator: View {
+    var inset = PanelMetrics.horizontalPadding
+
     var body: some View {
         Rectangle()
             .fill(Color.cardSeparator)
             .frame(height: 1)
-            .padding(.leading, PanelMetrics.horizontalPadding)
+            .padding(.leading, inset)
     }
 }
 

@@ -86,16 +86,21 @@ struct StopSearchTests {
 
 struct RouteSearchTests {
     let routes = [
-        GTFSRoute(id: "r27", shortName: "27", longName: "Jobstown - Clare Hall"),
-        GTFSRoute(id: "r27a", shortName: "27A", longName: "Blunden Drive - Eden Quay"),
-        GTFSRoute(id: "r27x", shortName: "27X", longName: "Clare Hall - UCD Belfield"),
-        GTFSRoute(id: "r7", shortName: "7", longName: "Brides Glen - Mountjoy Sq"),
-        GTFSRoute(id: "rc1", shortName: "C1", longName: "Adamstown Stn - Sandymount"),
-        GTFSRoute(id: "r11", shortName: "11", longName: "Wadelai Park - Sandyford"),
+        RouteSearchResult(route: GTFSRoute(id: "r27", shortName: "27", longName: "Jobstown - Clare Hall"),
+                          destinations: ["Jobstown", "Clare Hall", "Eden Quay"]),
+        RouteSearchResult(route: GTFSRoute(id: "r27a", shortName: "27A", longName: "Blunden Drive - Eden Quay"),
+                          destinations: ["Eden Quay", "Blunden Drive"]),
+        RouteSearchResult(route: GTFSRoute(id: "r27x", shortName: "27X", longName: "Clare Hall - UCD Belfield"),
+                          destinations: ["UCD", "Clare Hall"]),
+        RouteSearchResult(route: GTFSRoute(id: "r7", shortName: "7", longName: "Brides Glen - Mountjoy Sq"), destinations: []),
+        RouteSearchResult(route: GTFSRoute(id: "rc1", shortName: "C1", longName: "Adamstown Stn - Sandymount"),
+                          destinations: ["Adamstown Station", "Sandymount"]),
+        RouteSearchResult(route: GTFSRoute(id: "r11", shortName: "11", longName: "Wadelai Park - Sandyford"),
+                          destinations: ["Sandyford B.D.", "Phoenix Pk"]),
     ]
 
     private func numbers(_ query: String) -> [String] {
-        RouteSearch.search(query, in: routes, limit: 10).map(\.shortName)
+        RouteSearch.search(query, in: routes, limit: 10).map(\.route.shortName)
     }
 
     @Test func numbersMatchByPrefixExactFirst() {
@@ -108,9 +113,15 @@ struct RouteSearchTests {
     @Test func namesMatchWordStarts() {
         #expect(numbers("clare hall") == ["27", "27X"])
         #expect(numbers("Sandy") == ["11", "C1"])
-        #expect(numbers("eden quay") == ["27A"])
         #expect(numbers("hall clare") == ["27", "27X"]) // in any order
         #expect(numbers("lare").isEmpty) // only the starts of words
+    }
+
+    @Test func destinationsMatchToo() {
+        // The 27 also goes to Eden Quay, though its name doesn't say so.
+        #expect(numbers("eden quay") == ["27", "27A"])
+        #expect(numbers("phoenix") == ["11"])
+        #expect(numbers("ucd") == ["27X"])
     }
 
     @Test func numberAndNameTogether() {

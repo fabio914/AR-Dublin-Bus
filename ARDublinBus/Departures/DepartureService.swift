@@ -112,7 +112,7 @@ actor DepartureService {
         }.value
     }
 
-    func searchRoutes(_ query: String, limit: Int = 8) async throws -> [GTFSRoute] {
+    func searchRoutes(_ query: String, limit: Int = 8) async throws -> [RouteSearchResult] {
         let timetable = try await timetableStore.loadedTimetable()
         return timetable.searchRoutes(query, limit: limit)
     }
