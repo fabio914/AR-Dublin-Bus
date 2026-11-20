@@ -17,8 +17,9 @@ struct PanelCard<Content: View, Footer: View>: View {
     let content: Content
 
     @Environment(\.panelCardPins) private var pins
-    @State private var isHeaderPinned = false
-    @State private var isFooterPinned = false
+    /// The header with the gap above it, and the footer, for clipping the body under them.
+    @State private var headerHeight: CGFloat = 0
+    @State private var footerHeight: CGFloat = 0
 
     init(title: String, subtitle: String? = nil, accessory: PanelHeader.Accessory? = nil,
          favourite: PanelHeader.Favourite? = nil, icon: String = "bus.fill",
@@ -38,16 +39,17 @@ struct PanelCard<Content: View, Footer: View>: View {
                 PanelCardPiece(edge: footer == nil ? .bottom : nil) {
                     content
                 }
+                .clippedUnderPinnedViews(headerHeight: headerHeight, footerHeight: footer == nil ? 0 : footerHeight)
             } header: {
                 PanelCardPiece(edge: .top) { header }
                     // The gap above the card, kept when the header pins so it doesn't touch the
                     // top of the scroll view.
                     .padding(.top, PanelMetrics.cardSpacing)
-                    .pinnedBackground(edge: .top, isPinned: $isHeaderPinned)
+                    .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { headerHeight = $0 }
             } footer: {
                 if let footer {
                     PanelCardPiece(edge: .bottom) { footer }
-                        .pinnedBackground(edge: .bottom, isPinned: $isFooterPinned)
+                        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { footerHeight = $0 }
                 }
             }
         } else {
@@ -110,29 +112,27 @@ private struct PanelCardPiece<Content: View>: View {
 }
 
 private extension View {
-    /// While this header (`.top`) or footer (`.bottom`) is pinned, the screen's background behind
-    /// it, so the card scrolling under it is hidden around its rounded corners, beside it (with
-    /// its shadow) and beyond it, including behind the translucent bars. Not drawn otherwise, so it doesn't cover the
-    /// shadow of the card before.
-    func pinnedBackground(edge: VerticalEdge, isPinned: Binding<Bool>) -> some View {
-        let room = PanelMetrics.shadowRadius * 3
-        return background {
-            if isPinned.wrappedValue {
-                Color.appBackground
-                    .padding(.horizontal, -room)
-                    // Over what has scrolled past: under the bars above a header, and below a footer.
-                    .padding(edge == .top ? .top : .bottom, -PanelMetrics.pinnedCover)
+    /// Hides a card's body where it has scrolled under its pinned header (and the gap above it)
+    /// or footer, so it never shows above the header (or behind the bars) or below the footer.
+    /// The cut is hidden by the header or footer, so the body seems to slide under it.
+    func clippedUnderPinnedViews(headerHeight: CGFloat, footerHeight: CGFloat) -> some View {
+        mask {
+            GeometryReader { proxy in
+                let size = proxy.size
+                // Room for the body's shadow beside it, and below it when it's the card's end.
+                let room = PanelMetrics.shadowRadius * 3
+                // The scroll view's visible area, in the body's coordinates; whole outside one.
+                let visible = proxy.bounds(of: .scrollView(axis: .vertical))
+                    ?? CGRect(x: 0, y: -1e6, width: size.width, height: 2e6)
+                // Where a pinned header ends and a pinned footer starts; beyond the body when
+                // they aren't pinned over it.
+                let top = max(visible.minY + headerHeight, -room)
+                let bottom = min(visible.maxY - footerHeight, size.height + room)
+                Rectangle()
+                    .frame(width: size.width + 2 * room, height: max(bottom - top, 0))
+                    .position(x: size.width / 2, y: (top + bottom) / 2)
             }
         }
-        .onGeometryChange(for: Bool.self) { proxy in
-            // The scroll view's visible area, in this view's coordinates.
-            guard let visible = proxy.bounds(of: .scrollView(axis: .vertical)) else { return false }
-            let tolerance = 0.5
-            return switch edge {
-            case .top: visible.minY >= -tolerance
-            case .bottom: visible.maxY <= proxy.size.height + tolerance
-            }
-        } action: { isPinned.wrappedValue = $0 }
     }
 }
 
@@ -180,9 +180,6 @@ enum PanelMetrics {
     static let shadowColor = Color.black.opacity(0.12)
     static let shadowRadius: CGFloat = 10
     static let shadowOffset: CGFloat = 3
-    /// How far above a pinned header and below a pinned footer the background reaches, to
-    /// cover what's behind the bars.
-    static let pinnedCover: CGFloat = 300
     /// The space between a pinned footer and the tab bar, like the home indicator's margin
     /// when there's no tab bar.
     static let tabBarFooterGap: CGFloat = 16
