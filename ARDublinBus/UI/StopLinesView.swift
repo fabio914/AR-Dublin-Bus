@@ -111,7 +111,7 @@ struct StopLinesCard: View {
     static let mapHeight: CGFloat = 200
 
     var body: some View {
-        PanelCard(title: "Lines", subtitle: subtitle, icon: "point.topleft.down.to.point.bottomright.curvepath.fill", footer: footer) {
+        PanelCard(title: "Routes", subtitle: subtitle, icon: "point.topleft.down.to.point.bottomright.curvepath.fill", footer: footer) {
             if let overview {
                 let colours = LineColour.colours(for: overview.lines)
                 if overview.lines.isEmpty {
@@ -122,7 +122,7 @@ struct StopLinesCard: View {
                     lineRows(overview.lines, colours: colours, stopCode: overview.stop.code)
                 }
             } else if let error {
-                PanelMessage(icon: "exclamationmark.triangle.fill", title: "Couldn't load the lines", detail: error)
+                PanelMessage(icon: "exclamationmark.triangle.fill", title: "Couldn't load the routes", detail: error)
             } else {
                 ProgressView()
                     .frame(height: Self.mapHeight)
@@ -135,13 +135,15 @@ struct StopLinesCard: View {
         guard let overview, !overview.lines.isEmpty else { return nil }
         return PanelFooter {
             Image(systemName: "hand.tap")
-            Text("Tap a line for its stops and timetable")
+            Text("Tap a route for its stops and timetable")
         }
     }
 
     private var subtitle: String? {
-        guard let count = overview?.lines.count else { return nil }
-        return "\(count) route\(count == 1 ? "" : "s") from this stop"
+        guard let overview else { return nil }
+        let count = overview.lines.count
+        let stop = overview.stop.name.isEmpty ? "this stop" : overview.stop.name
+        return "\(count) route\(count == 1 ? "" : "s") from \(stop)"
     }
 
     private func lineRows(_ lines: [StopLine], colours: [String: LineColour], stopCode: String) -> some View {

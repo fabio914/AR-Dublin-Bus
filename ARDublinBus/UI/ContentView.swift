@@ -51,24 +51,25 @@ private struct MainTabs: View {
             Tab("Nearby", systemImage: "location.fill", value: AppTab.nearby) {
                 NearbyStopsView()
             }
-            Tab("Search", systemImage: "magnifyingglass", value: AppTab.search) {
+            // The system's search tab (UISearchTab), which the tab bar puts last.
+            Tab(value: AppTab.search, role: .search) {
                 StopLookupView()
             }
             Tab("Settings", systemImage: "gearshape.fill", value: AppTab.settings) {
                 SettingsView()
             }
         }
-        .minimizesTabBarOnScroll()
+        .keepsTabBarOnScroll()
         .environment(\.isAboveTabBar, true)
     }
 }
 
 private extension View {
-    /// The tab bar shrinks while scrolling down, and comes back when scrolling up.
+    /// The tab bar stays at full size while scrolling.
     @ViewBuilder
-    func minimizesTabBarOnScroll() -> some View {
+    func keepsTabBarOnScroll() -> some View {
         if #available(iOS 26.0, *) {
-            tabBarMinimizeBehavior(.onScrollDown)
+            tabBarMinimizeBehavior(.never)
         } else {
             self
         }

@@ -1,14 +1,22 @@
 import SwiftUI
 
-/// A stop's departures board (same look as the AR panel) followed by all its lines, with a map
-/// of where each one goes, in a scroll view. Loads both and keeps the board fresh. Tapping a bus
-/// or a line opens it, so use inside a `NavigationStack` that uses `routeDestinations()`.
+/// A stop's departures board (same look as the AR panel), or all its routes with a map of where
+/// each one goes, picked in the navigation bar. Loads both and keeps the board fresh (the routes
+/// show each one's next bus). Tapping a bus or a route opens it, so use inside a
+/// `NavigationStack` that uses `routeDestinations()`.
 struct StopDetailsView: View {
     @Environment(AppModel.self) private var model
     let stopCode: String
     @State private var content: PanelContent?
     @State private var overview: StopLines?
     @State private var linesError: String?
+    @State private var section = Section.departures
+
+    enum Section: String, CaseIterable, Identifiable {
+        case departures = "Departures"
+        case routes = "Routes"
+        var id: Self { self }
+    }
 
     /// Enough departures that most lines' next bus is found, not just the first 12 shown.
     static let departureLimit = 200
@@ -17,20 +25,37 @@ struct StopDetailsView: View {
         ScrollView {
             TimelineView(.periodic(from: .now, by: 20)) { context in
                 PanelCardStack {
-                    DeparturesPanelView(
-                        content: content ?? .loading(stopCode: stopCode),
-                        now: context.date,
-                        maximumRows: 12,
-                        linksToTrips: true,
-                        favourite: favourite
-                    )
-                    StopLinesCard(overview: overview, error: linesError, board: board, now: context.date)
+                    switch section {
+                    case .departures:
+                        DeparturesPanelView(
+                            content: content ?? .loading(stopCode: stopCode),
+                            now: context.date,
+                            maximumRows: 12,
+                            linksToTrips: true,
+                            favourite: favourite
+                        )
+                    case .routes:
+                        StopLinesCard(overview: overview, error: linesError, board: board, now: context.date)
+                    }
                 }
                 .padding([.horizontal, .bottom])
             }
         }
         .panelCardScrollView()
+        // A scroll view of its own for each, so switching doesn't keep an offset past the end of
+        // a shorter one, where the lazy stack shows nothing.
+        .id(section)
         .background(Color.appBackground)
+        .toolbar {
+            // In place of the title, as on the route screen.
+            ToolbarItem(placement: .principal) {
+                Picker("Show", selection: $section) {
+                    ForEach(Section.allCases) { Text($0.rawValue).tag($0) }
+                }
+                .pickerStyle(.segmented)
+                .fixedSize()
+            }
+        }
         .task(id: stopCode) {
             content = .loading(stopCode: stopCode)
             while !Task.isCancelled {
