@@ -27,6 +27,8 @@ struct RouteMap: View {
     static let height: CGFloat = 200
     /// So the buses' direction arrows stay right when the map is rotated.
     @State private var heading: CLLocationDirection = 0
+    /// Ties the location and compass buttons to the map.
+    @Namespace private var mapScope
 
     init(path: [CLLocationCoordinate2D], stops: [Stop], highlighted: GTFSStop?, vehicles: [VehiclePosition], routeKey: String,
          isInteractive: Bool) {
@@ -39,8 +41,28 @@ struct RouteMap: View {
         _position = State(initialValue: Self.cameraPosition(for: path))
     }
 
+    /// Expanded, the map goes under the bars, while its buttons keep to the safe area (MapKit's
+    /// own would go under the status bar and the navigation bar's buttons).
     var body: some View {
-        Map(position: $position, interactionModes: isInteractive ? .all : []) {
+        ZStack(alignment: .topTrailing) {
+            map
+                .ignoresSafeArea(edges: isInteractive ? .all : [])
+            if isInteractive {
+                VStack(spacing: 10) {
+                    MapUserLocationButton(scope: mapScope)
+                    MapCompass(scope: mapScope)
+                }
+                .buttonBorderShape(.circle)
+                // Under the navigation bar's button, in line with it.
+                .padding(.horizontal, 16)
+                .padding(.vertical, 12)
+            }
+        }
+        .mapScope(mapScope)
+    }
+
+    private var map: some View {
+        Map(position: $position, interactionModes: isInteractive ? .all : [], scope: mapScope) {
             MapPolyline(coordinates: path)
                 .stroke(Color.appTint, style: StrokeStyle(lineWidth: 5, lineCap: .round, lineJoin: .round))
 
@@ -80,15 +102,10 @@ struct RouteMap: View {
             UserAnnotation()
         }
         .mapStyle(.standard(pointsOfInterest: .excludingAll))
-        .mapControls {
-            MapUserLocationButton()
-            MapCompass()
-        }
-        .mapControlVisibility(isInteractive ? .automatic : .hidden)
+        // The buttons are drawn over it instead (`body`).
+        .mapControls {}
         // Still, it lets drags through to the scroll view it's in.
         .allowsHitTesting(isInteractive)
-        // Expanded, it goes under the bars; what's over it still keeps to the safe area.
-        .ignoresSafeArea(edges: isInteractive ? .all : [])
         .onMapCameraChange(frequency: .continuous) { context in
             heading = context.camera.heading
         }
