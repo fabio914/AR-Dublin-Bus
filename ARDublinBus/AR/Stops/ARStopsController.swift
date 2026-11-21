@@ -27,10 +27,19 @@ struct ARStopsStatus: Equatable, Sendable {
 }
 
 /// Which nearby stop's card is unfolded: the nearest within `unfoldDistance`, kept until it's
-/// further than `foldDistance`, so it doesn't flicker at the edge.
+/// further than `foldDistance`, so it doesn't flicker at the edge. Further out, each stop's card
+/// shows its lines within `routesDistance`, and is compact beyond `compactDistance`.
 enum NearbyUnfolding {
     static let unfoldDistance: Float = 5
     static let foldDistance: Float = 8
+    static let routesDistance: Float = 10
+    static let compactDistance: Float = 13
+
+    /// Whether a stop's card is compact at `distance` (horizontal, in metres), given whether it
+    /// is now (`nil` for a new card).
+    static func isCompact(current: Bool?, distance: Float) -> Bool {
+        distance > (current == false ? compactDistance : routesDistance)
+    }
 
     /// - Parameters:
     ///   - current: the stop unfolded now.
@@ -48,6 +57,8 @@ struct PinHandoff {
     let cardTransform: simd_float4x4
     /// How far the pin had unfolded (0 folded … 1 unfolded).
     let progress: Float
+    /// How compact the pin was (0 folded … 1 compact).
+    let compactness: Float
     let header: StopCardEntity.Header?
 }
 
@@ -211,7 +222,8 @@ final class ARStopsController: NSObject, CLLocationManagerDelegate {
         handedOffStopCode = stopCode
         guard let pin = pin(forStopCode: stopCode) else { return nil }
         let handoff = PinHandoff(stop: pin.stop, cardTransform: pin.entity.card.transformMatrix(relativeTo: nil),
-                                 progress: pin.entity.card.progress, header: pin.entity.card.header)
+                                 progress: pin.entity.card.progress, compactness: pin.entity.compactness,
+                                 header: pin.entity.card.header)
         // The sign's card shows this stop's board from now on.
         if unfoldedPinID == pin.stop.id { unfoldedPinID = nil }
         pin.entity.fold()
@@ -223,6 +235,11 @@ final class ARStopsController: NSObject, CLLocationManagerDelegate {
     func cardTransform(stopCode: String) -> simd_float4x4? {
         guard let pin = pin(forStopCode: stopCode), pin.entity.parent != nil else { return nil }
         return pin.entity.card.transformMatrix(relativeTo: nil)
+    }
+
+    /// How compact the stop's (hidden) pin card is, for folding the sign's card back into it.
+    func cardCompactness(stopCode: String) -> Float? {
+        pin(forStopCode: stopCode)?.entity.compactness
     }
 
     /// The sign's card folded back into the stop's pin: show the pin again.

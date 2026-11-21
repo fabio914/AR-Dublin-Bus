@@ -74,21 +74,25 @@ struct TripView: View {
 }
 
 /// The route's path with its stops, where it starts and ends, the stop the bus was picked
-/// from, and the bus itself when it reports its position.
+/// from, and the bus itself when it reports its position. It expands to the whole screen to be
+/// moved around.
 private struct TripMap: View {
     let journey: TripJourney
 
     var body: some View {
-        RouteMap(
-            path: journey.shape,
-            stops: journey.stops.map { RouteMap.Stop(id: $0.sequence, stop: $0.stop, isDimmed: $0.hasPassed) },
-            highlighted: journey.origin?.stop,
-            vehicles: journey.vehicle.map { [$0] } ?? [],
-            routeKey: journey.reference.tripID
-        )
-        .overlay(alignment: .bottomLeading) {
-            if let vehicle = journey.vehicle {
-                MapCaption(systemImage: "bus.fill", text: seen(vehicle))
+        ExpandableMap(title: "Route \(journey.route.shortName) to \(journey.headsign)") { isInteractive in
+            RouteMap(
+                path: journey.shape,
+                stops: journey.stops.map { RouteMap.Stop(id: $0.sequence, stop: $0.stop, isDimmed: $0.hasPassed) },
+                highlighted: journey.origin?.stop,
+                vehicles: journey.vehicle.map { [$0] } ?? [],
+                routeKey: journey.reference.tripID,
+                isInteractive: isInteractive
+            )
+            .overlay(alignment: .bottomLeading) {
+                if let vehicle = journey.vehicle {
+                    MapCaption(systemImage: "bus.fill", text: seen(vehicle))
+                }
             }
         }
     }

@@ -75,6 +75,8 @@ final class ARCoordinator: NSObject, ARSessionDelegate {
         /// Where it started, relative to the sign's root.
         let from: Transform
         let fromProgress: Float
+        /// From a compact pin, say (0 folded … 1 compact).
+        let fromCompactness: Float
         let destination: Destination
         let start: TimeInterval
     }
@@ -436,6 +438,7 @@ final class ARCoordinator: NSObject, ARSessionDelegate {
 
         var from = sign.card.transform
         var fromProgress = sign.card.progress
+        var fromCompactness = sign.card.compactness
         if let handoff = stopsController?.handOff(stopCode: code),
            simd_distance(handoff.cardTransform.translation, sign.root.position(relativeTo: nil)) < Self.handoffReach {
             if sign.stopName == nil, !handoff.stop.stop.name.isEmpty { sign.stopName = handoff.stop.stop.name }
@@ -445,14 +448,17 @@ final class ARCoordinator: NSObject, ARSessionDelegate {
             sign.card.setFoldedBody(StopCardEntity.FoldedBody(routes: sign.routes))
             from = relativeToRoot(handoff.cardTransform, of: sign)
             fromProgress = handoff.progress
+            fromCompactness = handoff.compactness
         } else if case .inPin = sign.cardState {
             from = cardTransformOnSign(sign)
             fromProgress = 0
+            fromCompactness = 0
         }
         if model.panelContent.stopCode == code { sign.card.setContent(model.panelContent) }
         sign.card.isEnabled = true
-        sign.cardState = .moving(CardMove(from: from, fromProgress: fromProgress, destination: .unfolded,
-                                          start: CACurrentMediaTime()))
+        sign.card.setCompactness(fromCompactness)
+        sign.cardState = .moving(CardMove(from: from, fromProgress: fromProgress, fromCompactness: fromCompactness,
+                                          destination: .unfolded, start: CACurrentMediaTime()))
     }
 
     /// Folds the card back into the stop's pin, or by the sign if there's no pin nearby.
@@ -463,7 +469,8 @@ final class ARCoordinator: NSObject, ARSessionDelegate {
             destination = .pin
         }
         sign.cardState = .moving(CardMove(from: sign.card.transform, fromProgress: sign.card.progress,
-                                          destination: destination, start: CACurrentMediaTime()))
+                                          fromCompactness: sign.card.compactness, destination: destination,
+                                          start: CACurrentMediaTime()))
     }
 
     /// Moves the card for this frame, and unfolds or folds it as the user comes and goes.
@@ -477,12 +484,14 @@ final class ARCoordinator: NSObject, ARSessionDelegate {
         case .folded:
             sign.card.transform = onSign
             sign.card.setProgress(0)
+            sign.card.setCompactness(0)
             if sign.stopCode != nil, distance <= NearbyUnfolding.unfoldDistance { unfoldCard(sign) }
         case .inPin:
             if distance <= NearbyUnfolding.unfoldDistance { unfoldCard(sign) }
         case .unfolded:
             sign.card.transform = onSign
             sign.card.setProgress(1)
+            sign.card.setCompactness(0)
             if distance > sign.foldDistance { foldCard(sign) }
         case .moving(let move):
             let t = Float(min((CACurrentMediaTime() - move.start) / Self.cardMoveDuration, 1))
@@ -491,10 +500,12 @@ final class ARCoordinator: NSObject, ARSessionDelegate {
             case .unfolded:
                 sign.card.transform = move.from.interpolated(to: onSign, eased)
                 sign.card.setProgress(move.fromProgress + (1 - move.fromProgress) * eased)
+                sign.card.setCompactness(move.fromCompactness * (1 - eased))
                 if t >= 1 { sign.cardState = .unfolded }
             case .folded:
                 sign.card.transform = move.from.interpolated(to: onSign, eased)
                 sign.card.setProgress(move.fromProgress * (1 - eased))
+                sign.card.setCompactness(move.fromCompactness * (1 - eased))
                 if t >= 1 {
                     sign.cardState = .folded
                     stopsController?.suppressesUnfolding = false
@@ -503,11 +514,15 @@ final class ARCoordinator: NSObject, ARSessionDelegate {
                 guard let code = sign.stopCode, let pin = stopsController?.cardTransform(stopCode: code) else {
                     // The pin went away (the stops were reloaded or switched off): fold here instead.
                     sign.cardState = .moving(CardMove(from: sign.card.transform, fromProgress: sign.card.progress,
-                                                      destination: .folded, start: CACurrentMediaTime()))
+                                                      fromCompactness: sign.card.compactness, destination: .folded,
+                                                      start: CACurrentMediaTime()))
                     return
                 }
                 sign.card.transform = move.from.interpolated(to: relativeToRoot(pin, of: sign), eased)
                 sign.card.setProgress(move.fromProgress * (1 - eased))
+                // Ends up looking like the pin, compact if it's far enough.
+                let pinCompactness = stopsController?.cardCompactness(stopCode: code) ?? 0
+                sign.card.setCompactness(move.fromCompactness + (pinCompactness - move.fromCompactness) * eased)
                 if t >= 1 {
                     sign.card.isEnabled = false
                     stopsController?.takeBack(stopCode: code)
@@ -532,7 +547,7 @@ final class ARCoordinator: NSObject, ARSessionDelegate {
     private func updateCardContent(_ sign: TrackedSign) {
         let distance = sign.distanceLabel.metres
         if let code = sign.stopCode {
-            sign.card.setHeader(StopCardEntity.Header(title: "Stop \(code)", subtitle: sign.stopName, distance: distance))
+            sign.card.setHeader(.stop(code: code, name: sign.stopName, distance: distance))
             sign.card.setFoldedBody(StopCardEntity.FoldedBody(routes: sign.routes))
         } else {
             sign.card.setHeader(StopCardEntity.Header(title: "Bus stop", subtitle: nil, distance: distance))

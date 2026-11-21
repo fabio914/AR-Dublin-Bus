@@ -77,22 +77,26 @@ struct LineView: View {
         details.directions.first { $0.id == directionID } ?? details.directions.first
     }
 
-    /// Pinned with the header of the stops card, so the stops slide under it.
+    /// Pinned with the header of the stops card, so the stops slide under it. It expands to
+    /// the whole screen to be moved around.
     private func map(details: LineDetails, direction: LineDirection) -> some View {
-        RouteMap(
-            path: direction.shape,
-            stops: direction.stops.map { RouteMap.Stop(id: $0.sequence, stop: $0.stop) },
-            highlighted: details.stop == nil ? nil : direction.stops[direction.stopIndex].stop,
-            vehicles: vehicles ?? [],
-            routeKey: direction.id
-        )
-        .overlay(alignment: .bottomLeading) {
-            if let vehicles {
-                let count = vehicles.count
-                MapCaption(
-                    systemImage: "dot.radiowaves.left.and.right",
-                    text: Text(count == 0 ? "No buses on the road" : "\(count) bus\(count == 1 ? "" : "es") on the road")
-                )
+        ExpandableMap(title: "Route \(details.route.shortName) to \(direction.headsign)") { isInteractive in
+            RouteMap(
+                path: direction.shape,
+                stops: direction.stops.map { RouteMap.Stop(id: $0.sequence, stop: $0.stop) },
+                highlighted: details.stop == nil ? nil : direction.stops[direction.stopIndex].stop,
+                vehicles: vehicles ?? [],
+                routeKey: direction.id,
+                isInteractive: isInteractive
+            )
+            .overlay(alignment: .bottomLeading) {
+                if let vehicles {
+                    let count = vehicles.count
+                    MapCaption(
+                        systemImage: "dot.radiowaves.left.and.right",
+                        text: Text(count == 0 ? "No buses on the road" : "\(count) bus\(count == 1 ? "" : "es") on the road")
+                    )
+                }
             }
         }
         .frame(height: RouteMap.height)

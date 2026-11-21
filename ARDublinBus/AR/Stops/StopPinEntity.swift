@@ -9,12 +9,15 @@ struct ARStop: Identifiable, Hashable, Sendable {
     var id: String { stop.id }
 }
 
-/// The pin over a stop near the user: a folded `StopCardEntity` showing the stop, its distance
-/// and its lines, pointing down at the stop.
+/// The pin over a stop near the user: a `StopCardEntity` pointing down at the stop. It shows the
+/// stop in three steps as the user walks up to it:
+/// - further than `NearbyUnfolding.routesDistance`, compact: just the stop's name and number;
+/// - closer, folded: the stop, its distance and its lines;
+/// - next to the stop (`NearbyUnfolding.unfoldDistance`), unfolded: the departures board.
 ///
-/// Folded, the card keeps roughly the same size on screen whatever the distance, and turns to face
-/// the camera. Close to the stop it unfolds into the departures board, at a readable real size
-/// around eye level, still facing the camera.
+/// Compact or folded, the card keeps roughly the same size on screen whatever the distance, and
+/// turns to face the camera. Unfolded, it's at a readable real size around eye level, still
+/// facing the camera.
 @MainActor
 final class StopPinEntity: Entity, HasCollision {
     private(set) var stop: ARStop?
@@ -25,6 +28,10 @@ final class StopPinEntity: Entity, HasCollision {
     private(set) var isUnfolded = false
     /// 0 folded … 1 unfolded, moving towards `isUnfolded`.
     private(set) var unfolding: Float = 0
+    /// Far enough that the card is compact; `nil` until the first distance.
+    private(set) var isCompact: Bool?
+    /// 0 folded … 1 compact, moving towards `isCompact`.
+    private var compacting: Float = 0
     private var builtCollision: (progress: Float, height: Float)?
 
     /// Height of the pointer's tip above the ground, in metres. The entity's origin is the tip.
@@ -33,6 +40,10 @@ final class StopPinEntity: Entity, HasCollision {
     static let unfoldedTopAboveGround: Float = 1.9
     /// Seconds to unfold or fold.
     static let unfoldDuration: Float = 0.6
+    /// Seconds to go between compact and folded.
+    static let compactDuration: Float = 0.4
+    /// Compact or folded, how much bigger the card is than it was at first (with `width(atDistance:)`).
+    static let foldedSizeFactor: Float = 1.25
 
     required init() {
         super.init()
@@ -48,15 +59,21 @@ final class StopPinEntity: Entity, HasCollision {
     }
 
     static func header(for stop: ARStop, distance: Int?) -> StopCardEntity.Header {
-        StopCardEntity.Header(title: "Stop \(stop.stop.code)", subtitle: stop.stop.name.isEmpty ? nil : stop.stop.name,
-                              distance: distance)
+        .stop(code: stop.stop.code, name: stop.stop.name, distance: distance)
     }
 
-    /// Shows the walking distance, re-rendering only when the rounded value changes.
+    /// Shows the walking distance, re-rendering only when the rounded value changes, and makes
+    /// the card compact or not for it.
     func update(distance: Double) {
+        let compact = NearbyUnfolding.isCompact(current: isCompact, distance: Float(distance))
+        if isCompact == nil { compacting = compact ? 1 : 0 } // no animation for a new pin
+        isCompact = compact
         guard let stop, distanceLabel.update(distance) else { return }
         card.setHeader(Self.header(for: stop, distance: distanceLabel.metres))
     }
+
+    /// How compact the card is now (0 folded … 1 compact), for a sign's card taking over from it.
+    var compactness: Float { card.compactness }
 
     func setUnfolded(_ unfolded: Bool) {
         isUnfolded = unfolded
@@ -78,10 +95,13 @@ final class StopPinEntity: Entity, HasCollision {
         let step = deltaTime / Self.unfoldDuration
         unfolding = isUnfolded ? min(unfolding + step, 1) : max(unfolding - step, 0)
         let progress = smoothstep(unfolding)
+        let compactStep = deltaTime / Self.compactDuration
+        compacting = isCompact == true ? min(compacting + compactStep, 1) : max(compacting - compactStep, 0)
+        card.setCompactness(smoothstep(compacting))
 
         // Metres per point: folded it depends on the distance; unfolded it's the card's real size.
         let distance = simd_distance(position(relativeTo: nil), cameraPosition)
-        let foldedScale = Self.width(atDistance: distance) / StopCardEntity.width
+        let foldedScale = Self.width(atDistance: distance) * Self.foldedSizeFactor / StopCardEntity.width
         let scale = foldedScale + (StopCardEntity.unfoldedScale - foldedScale) * progress
         self.scale = SIMD3(repeating: scale)
 

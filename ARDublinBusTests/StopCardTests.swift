@@ -60,6 +60,25 @@ struct StopCardEntityTests {
         #expect(card.height(at: 1) == card.headerHeight + card.boardHeight)
     }
 
+    @Test func headersShowTheStopsNameAboveItsNumber() {
+        #expect(StopCardEntity.Header.stop(code: "271", name: "O'Connell St Lwr", distance: 40)
+            == .init(title: "O'Connell St Lwr", subtitle: "Stop 271", distance: 40))
+        #expect(StopCardEntity.Header.stop(code: "271", name: "", distance: nil) == .init(title: "Stop 271"))
+        #expect(StopCardEntity.Header.stop(code: "271", name: nil, distance: nil) == .init(title: "Stop 271"))
+    }
+
+    @Test func compactCardKeepsTheFoldedSize() {
+        let card = card()
+        let folded = card.height(at: 0)
+        card.setCompactness(1)
+        #expect(card.compactness == 1)
+        #expect(card.height(at: 0) == folded)
+        // It goes with the lines as the card unfolds.
+        #expect(StopCardEntity.compactOpacity(compactness: 1, progress: 0) == 1)
+        #expect(StopCardEntity.compactOpacity(compactness: 1, progress: 0.35) == 0)
+        #expect(StopCardEntity.compactOpacity(compactness: 0, progress: 0) == 0)
+    }
+
     @Test func linesFadeOutBeforeTheBoardFadesIn() {
         #expect(StopCardEntity.foldedOpacity(at: 0) == 1)
         #expect(StopCardEntity.boardOpacity(at: 0) == 0)

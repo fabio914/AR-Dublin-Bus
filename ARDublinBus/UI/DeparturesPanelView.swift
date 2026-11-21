@@ -15,7 +15,7 @@ struct DeparturesPanelView: View {
     static let width: CGFloat = 360
 
     var body: some View {
-        PanelCard(title: Self.title(for: content), subtitle: Self.stopName(for: content), favourite: favourite, footer: footer) {
+        PanelCard(title: Self.title(for: content), subtitle: Self.subtitle(for: content), favourite: favourite, footer: footer) {
             DeparturesPanelBody(content: content, now: now, maximumRows: maximumRows, linksToTrips: linksToTrips, showsFooter: false)
         }
     }
@@ -25,13 +25,19 @@ struct DeparturesPanelView: View {
         return PanelFooter { RealtimeStatusLabel(issue: board.realtimeIssue, updatedAt: board.updatedAt) }
     }
 
+    /// The stop's name, with its number below (as on the AR cards); just the number until the
+    /// name is known.
     static func title(for content: PanelContent) -> String {
-        switch content {
-        case .reading: "Bus stop"
-        case .loading(let code): "Stop \(code)"
-        case .failure(let code, _): code.map { "Stop \($0)" } ?? "Bus stop"
-        case .board(let board): "Stop \(board.stopCode)"
-        }
+        if let name = stopName(for: content) { return name }
+        return stopNumber(for: content) ?? "Bus stop"
+    }
+
+    static func subtitle(for content: PanelContent) -> String? {
+        stopName(for: content) == nil ? nil : stopNumber(for: content)
+    }
+
+    private static func stopNumber(for content: PanelContent) -> String? {
+        content.stopCode.map { "Stop \($0)" }
     }
 
     static func stopName(for content: PanelContent) -> String? {
