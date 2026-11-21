@@ -212,11 +212,17 @@ final class ARCoordinator: NSObject, ARSessionDelegate {
         startSession()
     }
 
+    /// How far a tap reaches: past the furthest pins. (`ARView.entities(at:)` only reaches 100 m,
+    /// so pins further away couldn't be tapped.)
+    private static let tapReach = Float(ARStopsController.radius) * 2
+
     @objc private func handleTap(_ recognizer: UITapGestureRecognizer) {
-        guard let arView, let stopsController else { return }
-        let point = recognizer.location(in: arView)
-        for entity in arView.entities(at: point) {
-            if let stop = stopsController.stop(for: entity) {
+        guard let arView, let stopsController,
+              let ray = arView.ray(through: recognizer.location(in: arView)) else { return }
+        let hits = arView.scene.raycast(origin: ray.origin, direction: ray.direction, length: Self.tapReach, query: .all)
+        // The nearest pin under the finger.
+        for hit in hits.sorted(by: { $0.distance < $1.distance }) {
+            if let stop = stopsController.stop(for: hit.entity) {
                 model.selectedARStop = stop
                 return
             }
