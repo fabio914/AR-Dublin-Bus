@@ -53,7 +53,7 @@ struct PanelRenderingTests {
         let board = StopBoard(stopCode: "271", stopName: "O'Connell St Lwr", departures: departures,
                               realtimeIssue: nil, realtimeTimestamp: now, generatedAt: now)
         let parts: [(String, AnyView)] = [
-            ("card-header", AnyView(StopCardEntity.HeaderView(header: .init(title: "Stop 271", subtitle: "O'Connell St Lwr", distance: 140)))),
+            ("card-header", AnyView(StopCardEntity.HeaderView(title: "O'Connell St Lwr", subtitle: "Stop 271"))),
             ("card-lines", AnyView(StopCardEntity.FoldedBodyView(folded: .init(routes: ["1", "11", "11B", "44", "44D", "53", "122", "C1", "C2"])))),
             ("card-reading", AnyView(StopCardEntity.FoldedBodyView(folded: .init(message: "Reading the stop number…")))),
             ("card-board", AnyView(StopCardEntity.BoardView(content: .board(board), now: now))),

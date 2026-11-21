@@ -33,7 +33,7 @@ final class StopCardEntity: Entity {
     struct Header: Equatable {
         var title: String
         var subtitle: String?
-        /// Walking distance in metres, shown on the right.
+        /// Walking distance in metres, shown on the compact card (under its icon) only.
         var distance: Int?
 
         /// A stop: its name on top and its number below, or just the number when there's no name.
@@ -97,8 +97,14 @@ final class StopCardEntity: Entity {
 
     func setHeader(_ header: Header) {
         guard header != self.header else { return }
+        let old = self.header
         self.header = header
-        let view = HeaderView(header: header)
+        // The header doesn't show the distance: only rendered again for its text.
+        guard old?.title != header.title || old?.subtitle != header.subtitle || headerLayer.model == nil else {
+            rebuild()
+            return
+        }
+        let view = HeaderView(title: header.title, subtitle: header.subtitle)
         guard let (texture, height) = Self.render(view) else { return }
         headerHeight = height
         headerLayer.model = ModelComponent(mesh: .generatePlane(width: Self.width, height: height),
@@ -208,7 +214,7 @@ final class StopCardEntity: Entity {
     /// Renders the compact card when its text or size has changed (only once it's needed).
     private func buildCompactLayer() {
         guard let header else { return }
-        let view = CompactView(title: header.title, subtitle: header.subtitle,
+        let view = CompactView(title: header.title, subtitle: header.subtitle, distance: header.distance,
                                height: CGFloat(headerHeight + foldedHeight))
         guard view != builtCompact, let (texture, height) = Self.render(view) else { return }
         builtCompact = view
@@ -286,14 +292,11 @@ func smoothstep(_ x: Float) -> Float {
 extension StopCardEntity {
     /// The green header, with rounded top corners (the white card shows below it).
     struct HeaderView: View {
-        let header: Header
+        let title: String
+        let subtitle: String?
 
         var body: some View {
-            PanelHeader(
-                title: header.title,
-                subtitle: header.subtitle,
-                accessory: header.distance.map { PanelHeader.Accessory(systemImage: "figure.walk", text: "\($0) m") }
-            )
+            PanelHeader(title: title, subtitle: subtitle)
             .clipShape(UnevenRoundedRectangle(topLeadingRadius: PanelMetrics.cornerRadius,
                                                topTrailingRadius: PanelMetrics.cornerRadius, style: .continuous))
         }
@@ -301,11 +304,14 @@ extension StopCardEntity {
 
     /// The card from further away: the stop's name and number in big type, all on green, as
     /// tall as the folded card (header and lines) so the card keeps its size as it changes.
-    /// The bus icon fills the card's height but for `padding`, the same on every side, and the
-    /// text is as big as fits beside it, wrapped if need be.
+    /// The bus icon, with the walking distance under it, fills the card's height but for
+    /// `padding`, the same on every side, and the text is as big as fits beside it, wrapped if
+    /// need be.
     struct CompactView: View, Equatable {
         let title: String
         let subtitle: String?
+        /// Walking distance in metres.
+        let distance: Int?
         let height: CGFloat
 
         static let padding = PanelMetrics.horizontalPadding
@@ -319,11 +325,23 @@ extension StopCardEntity {
             let titleSize = Self.titleSize(title: title, subtitle: subtitle,
                                            fitting: CGSize(width: Self.width - Self.padding * 3 - iconSize, height: iconSize))
             HStack(spacing: Self.padding) {
-                Image(systemName: "bus.fill")
-                    .font(.system(size: iconSize * 0.5, weight: .semibold))
-                    .frame(width: iconSize, height: iconSize)
-                    .background(Color.white.opacity(0.18),
-                                in: RoundedRectangle(cornerRadius: iconSize * 0.22, style: .continuous))
+                VStack(spacing: iconSize * 0.04) {
+                    Image(systemName: "bus.fill")
+                        .font(.system(size: iconSize * (distance == nil ? 0.5 : 0.4), weight: .semibold))
+                    if let distance {
+                        HStack(spacing: 3) {
+                            Image(systemName: "figure.walk")
+                            Text("\(distance) m")
+                        }
+                        .font(.system(size: iconSize * 0.18, weight: .bold))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.6)
+                        .padding(.horizontal, 6)
+                    }
+                }
+                .frame(width: iconSize, height: iconSize)
+                .background(Color.white.opacity(0.18),
+                            in: RoundedRectangle(cornerRadius: iconSize * 0.22, style: .continuous))
                 VStack(alignment: .leading, spacing: 0) {
                     Text(title)
                         .font(.system(size: titleSize, weight: .bold, design: .rounded))
