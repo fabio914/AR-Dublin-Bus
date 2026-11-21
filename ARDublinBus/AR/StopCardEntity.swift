@@ -299,39 +299,71 @@ extension StopCardEntity {
         }
     }
 
-    /// The card from further away: the stop's name and number in bigger type, all on green, as
+    /// The card from further away: the stop's name and number in big type, all on green, as
     /// tall as the folded card (header and lines) so the card keeps its size as it changes.
+    /// The bus icon fills the card's height but for `padding`, the same on every side, and the
+    /// text is as big as fits beside it, wrapped if need be.
     struct CompactView: View, Equatable {
         let title: String
         let subtitle: String?
         let height: CGFloat
 
+        static let padding = PanelMetrics.horizontalPadding
+        static let width = CGFloat(StopCardEntity.width)
+        /// Title sizes to try, largest first.
+        static let titleSizes: [CGFloat] = Array(stride(from: 46, through: 14, by: -1))
+        static let subtitleScale: CGFloat = 0.7
+
         var body: some View {
-            HStack(spacing: 14) {
+            let iconSize = max(height - Self.padding * 2, 1)
+            let titleSize = Self.titleSize(title: title, subtitle: subtitle,
+                                           fitting: CGSize(width: Self.width - Self.padding * 3 - iconSize, height: iconSize))
+            HStack(spacing: Self.padding) {
                 Image(systemName: "bus.fill")
-                    .font(.system(size: 30, weight: .semibold))
-                    .frame(width: 60, height: 60)
-                    .background(Color.white.opacity(0.18), in: RoundedRectangle(cornerRadius: 13, style: .continuous))
-                VStack(alignment: .leading, spacing: 2) {
+                    .font(.system(size: iconSize * 0.5, weight: .semibold))
+                    .frame(width: iconSize, height: iconSize)
+                    .background(Color.white.opacity(0.18),
+                                in: RoundedRectangle(cornerRadius: iconSize * 0.22, style: .continuous))
+                VStack(alignment: .leading, spacing: 0) {
                     Text(title)
-                        .font(.system(size: 29, weight: .bold, design: .rounded))
-                        .lineLimit(2)
-                        .minimumScaleFactor(0.6)
+                        .font(.system(size: titleSize, weight: .bold, design: .rounded))
+                        .fixedSize(horizontal: false, vertical: true)
                     if let subtitle {
                         Text(subtitle)
-                            .font(.system(size: 20, weight: .semibold))
+                            .font(.system(size: titleSize * Self.subtitleScale, weight: .semibold))
                             .opacity(0.85)
                             .lineLimit(1)
                     }
                 }
-                Spacer(minLength: 0)
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
             .foregroundStyle(.white)
-            .padding(.horizontal, PanelMetrics.horizontalPadding)
-            .padding(.vertical, 8)
-            .frame(maxWidth: .infinity, minHeight: height, maxHeight: height)
+            .padding(Self.padding)
+            .frame(width: Self.width, height: height)
             .background(TFIColors.green)
             .clipShape(RoundedRectangle(cornerRadius: PanelMetrics.cornerRadius, style: .continuous))
+        }
+
+        /// The largest title size at which the title, wrapped without breaking a word, and the
+        /// subtitle under it fit in `size`.
+        nonisolated static func titleSize(title: String, subtitle: String?, fitting size: CGSize) -> CGFloat {
+            // A little room for SwiftUI measuring text slightly differently.
+            let width = size.width - 4
+            let words = title.components(separatedBy: " ")
+            for titleSize in titleSizes {
+                var font = UIFont.systemFont(ofSize: titleSize, weight: .bold)
+                if let rounded = font.fontDescriptor.withDesign(.rounded) { font = UIFont(descriptor: rounded, size: titleSize) }
+                let attributes: [NSAttributedString.Key: Any] = [.font: font]
+                guard words.allSatisfy({ ($0 as NSString).size(withAttributes: attributes).width <= width }) else { continue }
+                let titleHeight = (title as NSString).boundingRect(
+                    with: CGSize(width: width, height: .greatestFiniteMagnitude),
+                    options: [.usesLineFragmentOrigin, .usesFontLeading], attributes: attributes, context: nil
+                ).height.rounded(.up)
+                let subtitleHeight = subtitle == nil ? 0
+                    : UIFont.systemFont(ofSize: titleSize * subtitleScale, weight: .semibold).lineHeight.rounded(.up)
+                if titleHeight + subtitleHeight <= size.height { return titleSize }
+            }
+            return titleSizes.last ?? 14
         }
     }
 
