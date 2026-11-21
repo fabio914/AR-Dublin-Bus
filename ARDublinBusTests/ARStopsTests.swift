@@ -120,6 +120,18 @@ struct StopPinTests {
         #expect(StopPinEntity.width(atDistance: 10_000) == 36)
     }
 
+    @Test func cardsShowTheirLinesWithinTenMetres() {
+        // A new card: compact only further than 10 m.
+        #expect(NearbyUnfolding.isCompact(current: nil, distance: 30))
+        #expect(!NearbyUnfolding.isCompact(current: nil, distance: 9))
+        // Walking up, it shows its lines at 10 m…
+        #expect(NearbyUnfolding.isCompact(current: true, distance: 10.5))
+        #expect(!NearbyUnfolding.isCompact(current: true, distance: 10))
+        // …and walking away, it's compact again a little further out, so it doesn't flicker.
+        #expect(!NearbyUnfolding.isCompact(current: false, distance: 12))
+        #expect(NearbyUnfolding.isCompact(current: false, distance: 13.5))
+    }
+
     @Test func serviceFindsStopsAroundTheUserNearestFirst() async throws {
         let fixture = try GTFSFixture()
         _ = try fixture.load()

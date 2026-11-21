@@ -2,7 +2,8 @@ import MapKit
 import SwiftUI
 
 /// A route's path on a map: its stops as dots, pins where it starts and ends, the stop the
-/// user picked, and the buses running it. Used by the trip and line screens.
+/// user picked, and the buses running it. Used by the trip and line screens, where it's a still
+/// picture until expanded (`ExpandableMap`).
 struct RouteMap: View {
     struct Stop: Identifiable {
         let id: Int
@@ -18,24 +19,50 @@ struct RouteMap: View {
     let vehicles: [VehiclePosition]
     /// The camera goes back to the whole route when this changes (e.g. another direction).
     let routeKey: String
+    /// Can be panned and zoomed, with the location and compass buttons.
+    let isInteractive: Bool
     @State private var position: MapCameraPosition
 
     /// The height the trip and line screens show it at.
     static let height: CGFloat = 200
     /// So the buses' direction arrows stay right when the map is rotated.
     @State private var heading: CLLocationDirection = 0
+    /// Ties the location and compass buttons to the map.
+    @Namespace private var mapScope
 
-    init(path: [CLLocationCoordinate2D], stops: [Stop], highlighted: GTFSStop?, vehicles: [VehiclePosition], routeKey: String) {
+    init(path: [CLLocationCoordinate2D], stops: [Stop], highlighted: GTFSStop?, vehicles: [VehiclePosition], routeKey: String,
+         isInteractive: Bool) {
         self.path = path
         self.stops = stops
         self.highlighted = highlighted
         self.vehicles = vehicles
         self.routeKey = routeKey
+        self.isInteractive = isInteractive
         _position = State(initialValue: Self.cameraPosition(for: path))
     }
 
+    /// Expanded, the map goes under the bars, while its buttons keep to the safe area (MapKit's
+    /// own would go under the status bar and the navigation bar's buttons). As on the stops map,
+    /// the location button is at the bottom right and the compass at the top right.
     var body: some View {
-        Map(position: $position) {
+        ZStack {
+            map
+                .ignoresSafeArea(edges: isInteractive ? .all : [])
+            if isInteractive {
+                MapCompass(scope: mapScope)
+                    .padding(MapButtonLayout.inset)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+                MapUserLocationButton(scope: mapScope)
+                    .buttonBorderShape(.circle)
+                    .padding(MapButtonLayout.inset)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
+            }
+        }
+        .mapScope(mapScope)
+    }
+
+    private var map: some View {
+        Map(position: $position, interactionModes: isInteractive ? .all : [], scope: mapScope) {
             MapPolyline(coordinates: path)
                 .stroke(Color.appTint, style: StrokeStyle(lineWidth: 5, lineCap: .round, lineJoin: .round))
 
@@ -75,10 +102,10 @@ struct RouteMap: View {
             UserAnnotation()
         }
         .mapStyle(.standard(pointsOfInterest: .excludingAll))
-        .mapControls {
-            MapUserLocationButton()
-            MapCompass()
-        }
+        // The buttons are drawn over it instead (`body`).
+        .mapControls {}
+        // Still, it lets drags through to the scroll view it's in.
+        .allowsHitTesting(isInteractive)
         .onMapCameraChange(frequency: .continuous) { context in
             heading = context.camera.heading
         }
@@ -139,6 +166,59 @@ struct LiveBusMarker: View {
         .frame(width: 52, height: 52)
         .accessibilityElement()
         .accessibilityLabel("Bus, live position")
+    }
+}
+
+/// Where the maps' location button goes: in the bottom right corner of the safe area, this far
+/// from its edges (the same on the stops map and the expanded route maps).
+enum MapButtonLayout {
+    static let inset: CGFloat = 16
+    /// The location button's size; MapKit's SwiftUI button is this size.
+    static let size: CGFloat = 44
+}
+
+/// A map shown still, with a button that expands it to the whole screen, where it can be moved
+/// around, and a button there to collapse it again. `map` makes the map, interactive or not.
+struct ExpandableMap<MapView: View>: View {
+    /// The expanded map's title.
+    let title: String
+    @ViewBuilder let map: (_ isInteractive: Bool) -> MapView
+    @State private var isExpanded = false
+
+    var body: some View {
+        map(false)
+            .overlay(alignment: .topTrailing) {
+                Button {
+                    isExpanded = true
+                } label: {
+                    Image(systemName: "arrow.up.left.and.arrow.down.right")
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(Color.cardInk)
+                        .frame(width: 36, height: 36)
+                        .background(.regularMaterial, in: Circle())
+                        .contentShape(Circle())
+                }
+                .buttonStyle(.plain)
+                .padding(10)
+                .accessibilityLabel("Expand map")
+            }
+            .fullScreenCover(isPresented: $isExpanded) {
+                NavigationStack {
+                    map(true)
+                        .navigationTitle(title)
+                        .navigationBarTitleDisplayMode(.inline)
+                        .toolbar {
+                            ToolbarItem(placement: .topBarTrailing) {
+                                Button {
+                                    isExpanded = false
+                                } label: {
+                                    Image(systemName: "arrow.down.right.and.arrow.up.left")
+                                }
+                                .accessibilityLabel("Collapse map")
+                            }
+                        }
+                }
+            }
     }
 }
 

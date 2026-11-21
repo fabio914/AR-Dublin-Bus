@@ -51,24 +51,30 @@ private struct MainTabs: View {
             Tab("Nearby", systemImage: "location.fill", value: AppTab.nearby) {
                 NearbyStopsView()
             }
-            Tab("Search", systemImage: "magnifyingglass", value: AppTab.search) {
+            // Set apart from the other tabs, at the end of the tab bar.
+            Tab("Search", systemImage: "magnifyingglass", value: AppTab.search, role: Self.searchRole) {
                 StopLookupView()
             }
             Tab("Settings", systemImage: "gearshape.fill", value: AppTab.settings) {
                 SettingsView()
             }
         }
-        .minimizesTabBarOnScroll()
+        .keepsTabBarOnScroll()
         .environment(\.isAboveTabBar, true)
+    }
+
+    /// iOS 27 sets a tab apart in the tab bar when it's `.prominent`; `.search` no longer does.
+    private static var searchRole: TabRole {
+        if #available(iOS 27.0, *) { .prominent } else { .search }
     }
 }
 
 private extension View {
-    /// The tab bar shrinks while scrolling down, and comes back when scrolling up.
+    /// The tab bar stays at full size while scrolling.
     @ViewBuilder
-    func minimizesTabBarOnScroll() -> some View {
+    func keepsTabBarOnScroll() -> some View {
         if #available(iOS 26.0, *) {
-            tabBarMinimizeBehavior(.onScrollDown)
+            tabBarMinimizeBehavior(.never)
         } else {
             self
         }

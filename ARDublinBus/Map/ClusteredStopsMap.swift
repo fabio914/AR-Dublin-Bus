@@ -37,21 +37,43 @@ struct ClusteredStopsMap: UIViewRepresentable {
         mapView.register(MKMarkerAnnotationView.self,
                          forAnnotationViewWithReuseIdentifier: MKMapViewDefaultClusterAnnotationViewReuseIdentifier)
 
+        // Looks and sits like the route maps' location button (`MapButtonLayout`).
         let trackingButton = MKUserTrackingButton(mapView: mapView)
+        let buttonBackground = Self.locationButtonBackground()
+        buttonBackground.translatesAutoresizingMaskIntoConstraints = false
         trackingButton.translatesAutoresizingMaskIntoConstraints = false
-        trackingButton.backgroundColor = .systemBackground
-        trackingButton.layer.cornerRadius = 8
-        trackingButton.layer.shadowOpacity = 0.15
-        trackingButton.layer.shadowRadius = 4
-        trackingButton.layer.shadowOffset = CGSize(width: 0, height: 1)
-        mapView.addSubview(trackingButton)
+        buttonBackground.contentView.addSubview(trackingButton)
+        mapView.addSubview(buttonBackground)
+        let size = MapButtonLayout.size, inset = MapButtonLayout.inset
         NSLayoutConstraint.activate([
-            trackingButton.trailingAnchor.constraint(equalTo: mapView.safeAreaLayoutGuide.trailingAnchor, constant: -12),
-            trackingButton.bottomAnchor.constraint(equalTo: mapView.safeAreaLayoutGuide.bottomAnchor, constant: -24),
+            buttonBackground.widthAnchor.constraint(equalToConstant: size),
+            buttonBackground.heightAnchor.constraint(equalToConstant: size),
+            buttonBackground.trailingAnchor.constraint(equalTo: mapView.safeAreaLayoutGuide.trailingAnchor, constant: -inset),
+            buttonBackground.bottomAnchor.constraint(equalTo: mapView.safeAreaLayoutGuide.bottomAnchor, constant: -inset),
+            trackingButton.centerXAnchor.constraint(equalTo: buttonBackground.contentView.centerXAnchor),
+            trackingButton.centerYAnchor.constraint(equalTo: buttonBackground.contentView.centerYAnchor),
+            trackingButton.widthAnchor.constraint(equalToConstant: size),
+            trackingButton.heightAnchor.constraint(equalToConstant: size),
         ])
 
         context.coordinator.locationManager.requestWhenInUseAuthorization()
         return mapView
+    }
+
+    /// A round glass background, like SwiftUI's map buttons (a blur before iOS 26).
+    private static func locationButtonBackground() -> UIVisualEffectView {
+        let view: UIVisualEffectView
+        if #available(iOS 26.0, *) {
+            let glass = UIGlassEffect()
+            glass.isInteractive = true
+            view = UIVisualEffectView(effect: glass)
+            view.cornerConfiguration = .capsule()
+        } else {
+            view = UIVisualEffectView(effect: UIBlurEffect(style: .systemThickMaterial))
+            view.layer.cornerRadius = MapButtonLayout.size / 2
+            view.clipsToBounds = true
+        }
+        return view
     }
 
     func updateUIView(_ mapView: MKMapView, context: Context) {

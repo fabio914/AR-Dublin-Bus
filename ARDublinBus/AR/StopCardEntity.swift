@@ -3,12 +3,14 @@ import SwiftUI
 
 /// A bus stop as a card in AR: a green header with the stop, and under it either the lines that
 /// call there with a pointer below (*folded*: the pin over a nearby stop) or the departures board
-/// (*unfolded*).
+/// (*unfolded*). Further away, the folded card can also be *compact*: all green, with just the
+/// stop's name and number in bigger type, at the same size as the folded card.
 ///
 /// Each part is rendered from SwiftUI into its own texture when it changes; unfolding is animated
 /// by resizing and cropping those layers, not by rendering frames. As `progress` goes from 0 to 1
 /// the white card grows downwards, the lines and the pointer fade away, and the board is revealed
-/// from the top as the card reaches it.
+/// from the top as the card reaches it. As `compactness` goes from 0 to 1, the compact card
+/// fades in over the folded one, and the white card and pointer turn green.
 ///
 /// Local units are points of the SwiftUI layout (the card is `width` wide). The origin is the
 /// middle of the card's top edge; x is right, y up, and the card faces +z. Scale the entity to
@@ -31,8 +33,14 @@ final class StopCardEntity: Entity {
     struct Header: Equatable {
         var title: String
         var subtitle: String?
-        /// Walking distance in metres, shown on the right.
+        /// Walking distance in metres, shown on the compact card (under its icon) only.
         var distance: Int?
+
+        /// A stop: its name on top and its number below, or just the number when there's no name.
+        static func stop(code: String, name: String?, distance: Int?) -> Header {
+            guard let name, !name.isEmpty else { return Header(title: "Stop \(code)", distance: distance) }
+            return Header(title: name, subtitle: "Stop \(code)", distance: distance)
+        }
     }
 
     /// What the folded card shows under the header.
@@ -46,6 +54,7 @@ final class StopCardEntity: Entity {
     private let headerLayer = ModelEntity()
     private let foldedLayer = ModelEntity()
     private let boardLayer = ModelEntity()
+    private let compactLayer = ModelEntity()
     private let pointer = ModelEntity()
 
     private(set) var header: Header?
@@ -58,20 +67,29 @@ final class StopCardEntity: Entity {
     private(set) var boardHeight: Float = 0
     /// 0 folded … 1 unfolded.
     private(set) var progress: Float = 0
+    /// 0 folded, with the lines … 1 compact.
+    private(set) var compactness: Float = 0
+    /// What the compact layer was last rendered for: the header's text and the card's height.
+    private var builtCompact: CompactView?
+    private var builtTint: Float = -1
     /// What the meshes were last built for, so they're only rebuilt when they change.
     private var builtCardHeight: Float = -1
     private var builtBoardCrop: Float = -1
 
     required init() {
         super.init()
-        for layer in [background, pointer, headerLayer, foldedLayer, boardLayer] { addChild(layer) }
+        for layer in [background, pointer, headerLayer, foldedLayer, boardLayer, compactLayer] { addChild(layer) }
         // Opaque, so the transparent text layers always draw over it.
         let white = UnlitMaterial(color: .white)
         background.model = ModelComponent(mesh: .generatePlane(width: 1, height: 1), materials: [white])
         pointer.model = ModelComponent(mesh: Self.pointerMesh(), materials: [white])
         for layer in [headerLayer, foldedLayer, boardLayer] { layer.position.z = Self.layerOffset }
+        // In front of the others, which it covers.
+        compactLayer.position.z = Self.layerOffset * 2
         foldedLayer.components.set(OpacityComponent(opacity: 1))
         boardLayer.components.set(OpacityComponent(opacity: 0))
+        compactLayer.components.set(OpacityComponent(opacity: 0))
+        compactLayer.isEnabled = false
         setFoldedBody(FoldedBody())
     }
 
@@ -79,8 +97,14 @@ final class StopCardEntity: Entity {
 
     func setHeader(_ header: Header) {
         guard header != self.header else { return }
+        let old = self.header
         self.header = header
-        let view = HeaderView(header: header)
+        // The header doesn't show the distance: only rendered again for its text.
+        guard old?.title != header.title || old?.subtitle != header.subtitle || headerLayer.model == nil else {
+            rebuild()
+            return
+        }
+        let view = HeaderView(title: header.title, subtitle: header.subtitle)
         guard let (texture, height) = Self.render(view) else { return }
         headerHeight = height
         headerLayer.model = ModelComponent(mesh: .generatePlane(width: Self.width, height: height),
@@ -120,6 +144,14 @@ final class StopCardEntity: Entity {
         rebuild()
     }
 
+    /// 0 shows the folded card with its lines, 1 the compact one.
+    func setCompactness(_ compactness: Float) {
+        let compactness = min(max(compactness, 0), 1)
+        guard compactness != self.compactness else { return }
+        self.compactness = compactness
+        rebuild()
+    }
+
     /// Height of the white part under the header at `progress`.
     func bodyHeight(at progress: Float) -> Float {
         foldedHeight + (max(boardHeight, foldedHeight) - foldedHeight) * progress
@@ -136,6 +168,10 @@ final class StopCardEntity: Entity {
     nonisolated static func boardOpacity(at progress: Float) -> Float { smoothstep((progress - 0.3) / 0.5) }
     /// The pointer shrinks away first.
     nonisolated static func pointerScale(at progress: Float) -> Float { 1 - smoothstep(progress / 0.25) }
+    /// The compact card shows as much as it's compact, and goes with the lines as the card unfolds.
+    nonisolated static func compactOpacity(compactness: Float, progress: Float) -> Float {
+        compactness * foldedOpacity(at: progress)
+    }
 
     private func rebuild() {
         let body = bodyHeight(at: progress)
@@ -166,6 +202,38 @@ final class StopCardEntity: Entity {
             builtBoardCrop = visible
             boardLayer.model = ModelComponent(mesh: mesh, materials: [Self.material(boardTexture)])
         }
+
+        // The compact card covers the folded one (the header and the lines).
+        let compactOpacity = Self.compactOpacity(compactness: compactness, progress: progress)
+        compactLayer.isEnabled = compactOpacity > 0.001
+        if compactLayer.isEnabled { buildCompactLayer() }
+        compactLayer.components.set(OpacityComponent(opacity: compactOpacity))
+        setTint(compactOpacity)
+    }
+
+    /// Renders the compact card when its text or size has changed (only once it's needed).
+    private func buildCompactLayer() {
+        guard let header else { return }
+        let view = CompactView(title: header.title, subtitle: header.subtitle, distance: header.distance,
+                               height: CGFloat(headerHeight + foldedHeight))
+        guard view != builtCompact, let (texture, height) = Self.render(view) else { return }
+        builtCompact = view
+        compactLayer.model = ModelComponent(mesh: .generatePlane(width: Self.width, height: height),
+                                            materials: [Self.material(texture)])
+        compactLayer.position.y = -height / 2
+    }
+
+    /// Turns the white card and pointer green as the compact card shows, so no white shows at
+    /// its edges.
+    private func setTint(_ amount: Float) {
+        // Only for a visible change, but always for the ends.
+        guard amount != builtTint, abs(amount - builtTint) > 0.01 || amount == 0 || amount == 1 else { return }
+        builtTint = amount
+        let green = UIColor(TFIColors.green).cgColor.components ?? [0, 0.4, 0.33]
+        let mix = { (channel: Int) in CGFloat(1 + (Float(green[channel]) - 1) * amount) }
+        let material = UnlitMaterial(color: UIColor(red: mix(0), green: mix(1), blue: mix(2), alpha: 1))
+        background.model?.materials = [material]
+        pointer.model?.materials = [material]
     }
 
     // MARK: Meshes & textures
@@ -224,16 +292,96 @@ func smoothstep(_ x: Float) -> Float {
 extension StopCardEntity {
     /// The green header, with rounded top corners (the white card shows below it).
     struct HeaderView: View {
-        let header: Header
+        let title: String
+        let subtitle: String?
 
         var body: some View {
-            PanelHeader(
-                title: header.title,
-                subtitle: header.subtitle,
-                accessory: header.distance.map { PanelHeader.Accessory(systemImage: "figure.walk", text: "\($0) m") }
-            )
+            PanelHeader(title: title, subtitle: subtitle)
             .clipShape(UnevenRoundedRectangle(topLeadingRadius: PanelMetrics.cornerRadius,
                                                topTrailingRadius: PanelMetrics.cornerRadius, style: .continuous))
+        }
+    }
+
+    /// The card from further away: the stop's name and number in big type, all on green, as
+    /// tall as the folded card (header and lines) so the card keeps its size as it changes.
+    /// The bus icon, with the walking distance under it, fills the card's height but for
+    /// `padding`, the same on every side, and the text is as big as fits beside it, wrapped if
+    /// need be.
+    struct CompactView: View, Equatable {
+        let title: String
+        let subtitle: String?
+        /// Walking distance in metres.
+        let distance: Int?
+        let height: CGFloat
+
+        static let padding = PanelMetrics.horizontalPadding
+        static let width = CGFloat(StopCardEntity.width)
+        /// Title sizes to try, largest first.
+        static let titleSizes: [CGFloat] = Array(stride(from: 46, through: 14, by: -1))
+        static let subtitleScale: CGFloat = 0.7
+
+        var body: some View {
+            let iconSize = max(height - Self.padding * 2, 1)
+            let titleSize = Self.titleSize(title: title, subtitle: subtitle,
+                                           fitting: CGSize(width: Self.width - Self.padding * 3 - iconSize, height: iconSize))
+            HStack(spacing: Self.padding) {
+                VStack(spacing: iconSize * 0.04) {
+                    Image(systemName: "bus.fill")
+                        .font(.system(size: iconSize * (distance == nil ? 0.5 : 0.4), weight: .semibold))
+                    if let distance {
+                        HStack(spacing: 3) {
+                            Image(systemName: "figure.walk")
+                            Text("\(distance) m")
+                        }
+                        .font(.system(size: iconSize * 0.18, weight: .bold))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.6)
+                        .padding(.horizontal, 6)
+                    }
+                }
+                .frame(width: iconSize, height: iconSize)
+                .background(Color.white.opacity(0.18),
+                            in: RoundedRectangle(cornerRadius: iconSize * 0.22, style: .continuous))
+                VStack(alignment: .leading, spacing: 0) {
+                    Text(title)
+                        .font(.system(size: titleSize, weight: .bold, design: .rounded))
+                        .fixedSize(horizontal: false, vertical: true)
+                    if let subtitle {
+                        Text(subtitle)
+                            .font(.system(size: titleSize * Self.subtitleScale, weight: .semibold))
+                            .opacity(0.85)
+                            .lineLimit(1)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .foregroundStyle(.white)
+            .padding(Self.padding)
+            .frame(width: Self.width, height: height)
+            .background(TFIColors.green)
+            .clipShape(RoundedRectangle(cornerRadius: PanelMetrics.cornerRadius, style: .continuous))
+        }
+
+        /// The largest title size at which the title, wrapped without breaking a word, and the
+        /// subtitle under it fit in `size`.
+        nonisolated static func titleSize(title: String, subtitle: String?, fitting size: CGSize) -> CGFloat {
+            // A little room for SwiftUI measuring text slightly differently.
+            let width = size.width - 4
+            let words = title.components(separatedBy: " ")
+            for titleSize in titleSizes {
+                var font = UIFont.systemFont(ofSize: titleSize, weight: .bold)
+                if let rounded = font.fontDescriptor.withDesign(.rounded) { font = UIFont(descriptor: rounded, size: titleSize) }
+                let attributes: [NSAttributedString.Key: Any] = [.font: font]
+                guard words.allSatisfy({ ($0 as NSString).size(withAttributes: attributes).width <= width }) else { continue }
+                let titleHeight = (title as NSString).boundingRect(
+                    with: CGSize(width: width, height: .greatestFiniteMagnitude),
+                    options: [.usesLineFragmentOrigin, .usesFontLeading], attributes: attributes, context: nil
+                ).height.rounded(.up)
+                let subtitleHeight = subtitle == nil ? 0
+                    : UIFont.systemFont(ofSize: titleSize * subtitleScale, weight: .semibold).lineHeight.rounded(.up)
+                if titleHeight + subtitleHeight <= size.height { return titleSize }
+            }
+            return titleSizes.last ?? 14
         }
     }
 

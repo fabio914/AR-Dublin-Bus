@@ -1,4 +1,5 @@
 import RealityKit
+import CoreGraphics
 import simd
 import Testing
 @testable import ARDublinBus
@@ -58,6 +59,37 @@ struct StopCardEntityTests {
         // Folded, the pointer hangs under the lines; unfolded, it's gone.
         #expect(card.height(at: 0) == card.headerHeight + card.foldedHeight + StopCardEntity.pointerSize.y)
         #expect(card.height(at: 1) == card.headerHeight + card.boardHeight)
+    }
+
+    @Test func headersShowTheStopsNameAboveItsNumber() {
+        #expect(StopCardEntity.Header.stop(code: "271", name: "O'Connell St Lwr", distance: 40)
+            == .init(title: "O'Connell St Lwr", subtitle: "Stop 271", distance: 40))
+        #expect(StopCardEntity.Header.stop(code: "271", name: "", distance: nil) == .init(title: "Stop 271"))
+        #expect(StopCardEntity.Header.stop(code: "271", name: nil, distance: nil) == .init(title: "Stop 271"))
+    }
+
+    @Test func compactCardKeepsTheFoldedSize() {
+        let card = card()
+        let folded = card.height(at: 0)
+        card.setCompactness(1)
+        #expect(card.compactness == 1)
+        #expect(card.height(at: 0) == folded)
+        // It goes with the lines as the card unfolds.
+        #expect(StopCardEntity.compactOpacity(compactness: 1, progress: 0) == 1)
+        #expect(StopCardEntity.compactOpacity(compactness: 1, progress: 0.35) == 0)
+        #expect(StopCardEntity.compactOpacity(compactness: 0, progress: 0) == 0)
+    }
+
+    @Test func compactCardTextIsAsBigAsFits() {
+        let space = CGSize(width: 230, height: 88)
+        let short = StopCardEntity.CompactView.titleSize(title: "Ringsend", subtitle: "Stop 6", fitting: space)
+        let long = StopCardEntity.CompactView.titleSize(title: "Parnell Square West, Rotunda Hospital", subtitle: "Stop 2",
+                                                        fitting: space)
+        #expect(short > long)
+        #expect(long >= 20) // wrapped, rather than shrunk onto one line (about 16)
+        // Without a number under it, the name can be bigger still.
+        #expect(StopCardEntity.CompactView.titleSize(title: "Stop 4521", subtitle: nil, fitting: space)
+            > StopCardEntity.CompactView.titleSize(title: "Stop 4521", subtitle: "x", fitting: space))
     }
 
     @Test func linesFadeOutBeforeTheBoardFadesIn() {
