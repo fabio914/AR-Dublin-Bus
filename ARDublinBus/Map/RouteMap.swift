@@ -42,20 +42,20 @@ struct RouteMap: View {
     }
 
     /// Expanded, the map goes under the bars, while its buttons keep to the safe area (MapKit's
-    /// own would go under the status bar and the navigation bar's buttons).
+    /// own would go under the status bar and the navigation bar's buttons). As on the stops map,
+    /// the location button is at the bottom right and the compass at the top right.
     var body: some View {
-        ZStack(alignment: .topTrailing) {
+        ZStack {
             map
                 .ignoresSafeArea(edges: isInteractive ? .all : [])
             if isInteractive {
-                VStack(spacing: 10) {
-                    MapUserLocationButton(scope: mapScope)
-                    MapCompass(scope: mapScope)
-                }
-                .buttonBorderShape(.circle)
-                // Under the navigation bar's button, in line with it.
-                .padding(.horizontal, 16)
-                .padding(.vertical, 12)
+                MapCompass(scope: mapScope)
+                    .padding(MapButtonLayout.inset)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+                MapUserLocationButton(scope: mapScope)
+                    .buttonBorderShape(.circle)
+                    .padding(MapButtonLayout.inset)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
             }
         }
         .mapScope(mapScope)
@@ -167,6 +167,14 @@ struct LiveBusMarker: View {
         .accessibilityElement()
         .accessibilityLabel("Bus, live position")
     }
+}
+
+/// Where the maps' location button goes: in the bottom right corner of the safe area, this far
+/// from its edges (the same on the stops map and the expanded route maps).
+enum MapButtonLayout {
+    static let inset: CGFloat = 16
+    /// The location button's size; MapKit's SwiftUI button is this size.
+    static let size: CGFloat = 44
 }
 
 /// A map shown still, with a button that expands it to the whole screen, where it can be moved
